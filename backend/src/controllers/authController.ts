@@ -18,13 +18,15 @@ export const getOrCreateDefaultSession = async (req: Request, res: Response): Pr
       : 'default';
     const email = `device_${sanitizedId}@upitracker.local`;
 
+    const validPlatform = (platform === 'ios' || platform === 'web') ? platform : 'android';
+
     let user = await User.findOne({ email });
     if (!user) {
       user = await User.create({
         name: name || 'UPI User',
         email,
         password: `auto_${sanitizedId}_2026!`,
-        platform: platform || 'android'
+        platform: validPlatform
       });
 
       await Budget.create({
@@ -91,7 +93,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       name,
       email: email.toLowerCase(),
       password,
-      platform: platform || 'android'
+      platform: (platform === 'ios' || platform === 'web') ? platform : 'android'
     });
 
     // Create default monthly budget for new user (e.g. ₹25,000 monthly limit)

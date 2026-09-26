@@ -1,28 +1,22 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-// Auto-detect backend: prefers EXPO_PUBLIC_API_URL (deployed), then local host IP over Wi-Fi
-const getLocalServerUrl = (): string => {
+// Production Deployed Backend on Render
+const PRODUCTION_API_URL = 'https://upi-tracker-r7mk.onrender.com/api';
+
+const getBackendUrl = (): string => {
+  // 1. Explicit environment variable override if specified
   if (process.env.EXPO_PUBLIC_API_URL) {
     return process.env.EXPO_PUBLIC_API_URL;
   }
-  const hostUri = Constants.expoConfig?.hostUri;
-  if (hostUri) {
-    const hostIp = hostUri.split(':')[0];
-    return `http://${hostIp}:5000/api`;
-  }
-  return Platform.select({
-    android: 'http://10.0.2.2:5000/api',
-    ios: 'http://localhost:5000/api',
-    default: 'http://localhost:5000/api'
-  }) as string;
+  // 2. Production deployed backend default
+  return PRODUCTION_API_URL;
 };
 
 export const api = axios.create({
-  baseURL: getLocalServerUrl(),
-  timeout: 8000,
+  baseURL: getBackendUrl(),
+  timeout: 25000, // 25s timeout to gracefully accommodate Render cold starts
   headers: {
     'Content-Type': 'application/json'
   }

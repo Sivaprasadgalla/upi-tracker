@@ -7,7 +7,7 @@ export interface IUser extends Document {
   name: string;
   currency: string;
   deviceToken?: string;
-  platform?: 'android' | 'ios';
+  platform?: 'android' | 'ios' | 'web';
   notificationSettings: {
     dailySummary: boolean;
     summaryTime: string; // "21:00"
@@ -48,7 +48,7 @@ const UserSchema = new Schema<IUser>(
     },
     platform: {
       type: String,
-      enum: ['android', 'ios'],
+      enum: ['android', 'ios', 'web'],
       default: 'android'
     },
     notificationSettings: {
