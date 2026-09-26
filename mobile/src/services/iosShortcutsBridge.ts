@@ -12,16 +12,22 @@ export class IosShortcutsBridge {
 
       try {
         const parsedUrl = new URL(url);
-        if (parsedUrl.protocol === 'upitracker:' && parsedUrl.searchParams.has('text')) {
-          const rawText = parsedUrl.searchParams.get('text');
-          if (rawText) {
-            onNotificationTextReceived(decodeURIComponent(rawText));
+        const textParam = parsedUrl.searchParams.get('text') || parsedUrl.searchParams.get('log');
+        if (textParam) {
+          onNotificationTextReceived(decodeURIComponent(textParam));
+          if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+            window.history.replaceState({}, document.title, window.location.pathname);
           }
         }
       } catch (e) {
         // Fallback simple parsing
         if (url.includes('text=')) {
-          const rawText = url.split('text=')[1];
+          const rawText = url.split('text=')[1].split('&')[0];
+          if (rawText) {
+            onNotificationTextReceived(decodeURIComponent(rawText));
+          }
+        } else if (url.includes('log=')) {
+          const rawText = url.split('log=')[1].split('&')[0];
           if (rawText) {
             onNotificationTextReceived(decodeURIComponent(rawText));
           }
