@@ -35,7 +35,9 @@
         "VIBRATE",
         "RECEIVE_BOOT_COMPLETED",
         "USE_BIOMETRIC",
-        "USE_FINGERPRINT"
+        "USE_FINGERPRINT",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
       ]
     },
     "scheme": "upitracker",
@@ -51,6 +53,11 @@
           "faceIDPermission": "Allow UPI Tracker to use Face ID to securely authenticate and view your transactions."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4f7a21ce-d94d-4d36-9731-973501c971ec"
+      }
+    }
   }
 }

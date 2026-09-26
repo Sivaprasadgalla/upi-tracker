@@ -64,8 +64,11 @@ class UpiNotificationModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun isPermissionGranted(promise: Promise) {
         val packageName = reactContext.packageName
-        val isGranted = NotificationManagerCompat.getEnabledListenerPackages(reactContext)
-            .contains(packageName)
+        val flat = Settings.Secure.getString(
+            reactContext.contentResolver,
+            "enabled_notification_listeners"
+        )
+        val isGranted = flat != null && flat.contains(packageName)
         promise.resolve(isGranted)
     }
 

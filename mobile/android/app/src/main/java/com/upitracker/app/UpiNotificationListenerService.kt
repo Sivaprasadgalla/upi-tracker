@@ -1,6 +1,5 @@
 package com.upitracker.app
 
-import android.app.Notification
 import android.content.Intent
 import android.os.Bundle
 import android.service.notification.NotificationListenerService
@@ -37,9 +36,9 @@ class UpiNotificationListenerService : NotificationListenerService() {
         }
 
         val extras: Bundle = sbn.notification.extras ?: return
-        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: ""
-        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
-        val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString() ?: ""
+        val title = extras.getCharSequence("android.title")?.toString() ?: ""
+        val text = extras.getCharSequence("android.text")?.toString() ?: ""
+        val bigText = extras.getCharSequence("android.bigText")?.toString() ?: ""
 
         val fullContent = if (bigText.isNotEmpty()) "$title $bigText" else "$title $text"
 
@@ -60,10 +59,7 @@ class UpiNotificationListenerService : NotificationListenerService() {
         intent.putExtra("packageName", packageName)
         intent.putExtra("rawText", fullContent)
         intent.putExtra("timestamp", sbn.postTime)
+        intent.setPackage(this.packageName)
         sendBroadcast(intent)
-    }
-
-    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
-        super.onNotificationRemoved(sbn)
     }
 }
