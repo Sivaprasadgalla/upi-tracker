@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,9 @@ import {
   Switch,
   Alert,
   SafeAreaView,
-  ActivityIndicator
+  ActivityIndicator,
+  Modal,
+  Platform
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '../store/AppContext';
@@ -16,6 +18,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { ThemeMode } from '../theme/colors';
 import { IOSSegmentedControl } from '../components/ios/IOSSegmentedControl';
 import { Icon } from '../components/common/Icon';
+import { BiometricService } from '../services/biometricService';
 
 export const SetupTrackingScreen: React.FC = () => {
   const {
@@ -30,6 +33,14 @@ export const SetupTrackingScreen: React.FC = () => {
   const { theme, themeMode, setThemeMode, isDark } = useTheme();
   const [isSyncing, setIsSyncing] = useState(false);
 
+  // PIN Setup Modal States
+  const [pinModalVisible, setPinModalVisible] = useState(false);
+  const [pinMode, setPinMode] = useState<'setup' | 'change'>('setup');
+  const [pinStep, setPinStep] = useState<1 | 2>(1);
+  const [enteredPin, setEnteredPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [pinError, setPinError] = useState('');
+
   const themeOptions: ThemeMode[] = ['system', 'light', 'dark'];
   const themeLabels = ['System', 'Light', 'Dark'];
   const selectedThemeIndex = themeOptions.indexOf(themeMode);
@@ -40,11 +51,15 @@ export const SetupTrackingScreen: React.FC = () => {
   };
 
   const handleManualSync = async () => {
-    Haptics.selectionAsync();
+    try {
+      Haptics.selectionAsync();
+    } catch {}
     setIsSyncing(true);
     try {
       await refreshData();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch {}
       Alert.alert('Synchronized', 'Transactions and budget limits refreshed from backend database.');
     } catch {
       Alert.alert('Offline Mode', 'Could not connect to backend server. Operating with cached data.');
@@ -52,6 +67,92 @@ export const SetupTrackingScreen: React.FC = () => {
       setIsSyncing(false);
     }
   };
+
+  const openPinModal = (mode: 'setup' | 'change') => {
+    setPinMode(mode);
+    setPinStep(1);
+    setEnteredPin('');
+    setConfirmPin('');
+    setPinError('');
+    setPinModalVisible(true);
+  };
+
+  const closePinModal = () => {
+    setPinModalVisible(false);
+    setEnteredPin('');
+    setConfirmPin('');
+    setPinError('');
+  };
+
+  const handlePinDigit = async (digit: string) => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+
+    if (pinStep === 1) {
+      if (enteredPin.length >= 4) return;
+      const next = enteredPin + digit;
+      setEnteredPin(next);
+      setPinError('');
+      if (next.length === 4) {
+        setTimeout(() => setPinStep(2), 200);
+      }
+    } else {
+      if (confirmPin.length >= 4) return;
+      const next = confirmPin + digit;
+      setConfirmPin(next);
+      setPinError('');
+      if (next.length === 4) {
+        if (next === enteredPin) {
+          await BiometricService.setPin(enteredPin);
+          await toggleBiometricLock(true);
+          closePinModal();
+          try {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } catch {}
+          Alert.alert('PIN Configured', 'App security lock is now active with your 4-digit PIN.');
+        } else {
+          try {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          } catch {}
+          setPinError('PINs do not match. Please try again.');
+          setTimeout(() => setConfirmPin(''), 500);
+        }
+      }
+    }
+  };
+
+  const handlePinDelete = () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+
+    if (pinStep === 1) {
+      setEnteredPin((prev) => prev.slice(0, -1));
+    } else {
+      if (confirmPin.length > 0) {
+        setConfirmPin((prev) => prev.slice(0, -1));
+      } else {
+        setPinStep(1);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (pinModalVisible && Platform.OS === 'web' && typeof window !== 'undefined') {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (/^[0-9]$/.test(e.key)) {
+          handlePinDigit(e.key);
+        } else if (e.key === 'Backspace') {
+          handlePinDelete();
+        } else if (e.key === 'Escape') {
+          closePinModal();
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [pinModalVisible, pinStep, enteredPin, confirmPin]);
 
   const shortcutSteps = [
     {
@@ -195,27 +296,62 @@ export const SetupTrackingScreen: React.FC = () => {
             </View>
             <View style={styles.rowLabelContainer}>
               <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>
-                {isBiometricSupported ? `${biometricLabel} Lock` : 'Device Security'}
+                {isBiometricSupported ? `${biometricLabel}` : 'Device Security & PIN'}
               </Text>
               <Text style={[styles.rowSubLabel, { color: theme.textSecondary }]}>
-                Require authentication whenever opening app
+                Require authentication / PIN whenever opening app
               </Text>
             </View>
             <Switch
               value={isBiometricEnabled}
               onValueChange={async (value) => {
-                const success = await toggleBiometricLock(value);
-                if (!success && value) {
-                  Alert.alert(
-                    'Verification Failed',
-                    `Could not verify ${biometricLabel}. Ensure biometrics are enabled in device settings.`
-                  );
+                if (value) {
+                  if (Platform.OS === 'web') {
+                    const hasPin = await BiometricService.hasPin();
+                    if (!hasPin) {
+                      openPinModal('setup');
+                      return;
+                    }
+                  }
+                  const success = await toggleBiometricLock(true);
+                  if (!success) {
+                    Alert.alert(
+                      'Verification Failed',
+                      `Could not verify ${biometricLabel}. Ensure biometrics or security settings are enabled.`
+                    );
+                  }
+                } else {
+                  await toggleBiometricLock(false);
                 }
               }}
               trackColor={{ false: theme.separator, true: theme.success }}
               thumbColor="#FFFFFF"
             />
           </View>
+
+          {isBiometricEnabled && (
+            <>
+              <View style={[styles.hairline, { backgroundColor: theme.separator }]} />
+              <TouchableOpacity
+                style={styles.tableRow}
+                onPress={() => openPinModal('change')}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.iconSquircle, { backgroundColor: theme.primaryLight }]}>
+                  <Icon name="lock" size={20} color={theme.primary} />
+                </View>
+                <View style={styles.rowLabelContainer}>
+                  <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>
+                    Change Security PIN
+                  </Text>
+                  <Text style={[styles.rowSubLabel, { color: theme.textSecondary }]}>
+                    Update your 4-digit security code
+                  </Text>
+                </View>
+                <Icon name="chevron-right" size={18} color={theme.textSecondary} />
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
         {/* Section 4: Apple Shortcuts Guide */}
@@ -247,6 +383,118 @@ export const SetupTrackingScreen: React.FC = () => {
           ))}
         </View>
       </ScrollView>
+
+      {/* 4-Digit Security PIN Modal */}
+      <Modal
+        visible={pinModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closePinModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+            <View style={[styles.modalIconSquircle, { backgroundColor: theme.primaryLight }]}>
+              <Icon name="lock" size={26} color={theme.primary} />
+            </View>
+
+            <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>
+              {pinStep === 1
+                ? (pinMode === 'change' ? 'Enter New 4-Digit PIN' : 'Create 4-Digit PIN')
+                : 'Confirm Your PIN'}
+            </Text>
+
+            <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>
+              {pinStep === 1
+                ? 'Choose 4 digits to protect your financial records'
+                : 'Re-enter your 4 digits to confirm'}
+            </Text>
+
+            {/* 4 PIN Dots */}
+            <View style={styles.modalDotsRow}>
+              {[0, 1, 2, 3].map((index) => {
+                const currentVal = pinStep === 1 ? enteredPin : confirmPin;
+                const isFilled = index < currentVal.length;
+                return (
+                  <View
+                    key={index}
+                    style={[
+                      styles.modalDot,
+                      {
+                        backgroundColor: isFilled ? theme.primary : 'transparent',
+                        borderColor: isFilled ? theme.primary : theme.textSecondary
+                      }
+                    ]}
+                  />
+                );
+              })}
+            </View>
+
+            {/* Error Message */}
+            {pinError ? (
+              <View style={styles.modalErrorBox}>
+                <Text style={styles.modalErrorText}>{pinError}</Text>
+              </View>
+            ) : null}
+
+            {/* Keypad */}
+            <View style={styles.modalKeypad}>
+              {[
+                ['1', '2', '3'],
+                ['4', '5', '6'],
+                ['7', '8', '9'],
+                ['', '0', 'delete']
+              ].map((row, rIdx) => (
+                <View key={rIdx} style={styles.modalKeypadRow}>
+                  {row.map((k, kIdx) => {
+                    if (k === '') {
+                      return <View key={kIdx} style={styles.modalKeyEmpty} />;
+                    }
+                    if (k === 'delete') {
+                      return (
+                        <TouchableOpacity
+                          key={kIdx}
+                          style={styles.modalKeyEmpty}
+                          onPress={handlePinDelete}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.modalDeleteText, { color: theme.textPrimary }]}>⌫</Text>
+                        </TouchableOpacity>
+                      );
+                    }
+                    return (
+                      <TouchableOpacity
+                        key={kIdx}
+                        style={[
+                          styles.modalKeyButton,
+                          {
+                            backgroundColor: isDark
+                              ? 'rgba(255, 255, 255, 0.08)'
+                              : 'rgba(0, 0, 0, 0.05)',
+                            borderColor: theme.separator
+                          }
+                        ]}
+                        onPress={() => handlePinDigit(k)}
+                        activeOpacity={0.6}
+                      >
+                        <Text style={[styles.modalKeyText, { color: theme.textPrimary }]}>{k}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+
+            {/* Cancel Button */}
+            <TouchableOpacity
+              style={styles.modalCancelButton}
+              onPress={closePinModal}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.modalCancelText, { color: theme.textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -366,5 +614,113 @@ const styles = StyleSheet.create({
   hairline: {
     height: 0.5,
     marginLeft: 16
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 340,
+    borderRadius: 20,
+    borderWidth: 0.5,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10
+  },
+  modalIconSquircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 6,
+    textAlign: 'center'
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 18,
+    paddingHorizontal: 10
+  },
+  modalDotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+    gap: 16
+  },
+  modalDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 1.5
+  },
+  modalErrorBox: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 69, 58, 0.12)',
+    marginBottom: 12
+  },
+  modalErrorText: {
+    color: '#FF453A',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center'
+  },
+  modalKeypad: {
+    width: '100%',
+    maxWidth: 240,
+    marginBottom: 8
+  },
+  modalKeypadRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10
+  },
+  modalKeyButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 0.5
+  },
+  modalKeyEmpty: {
+    width: 56,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  modalKeyText: {
+    fontSize: 22,
+    fontWeight: '500'
+  },
+  modalDeleteText: {
+    fontSize: 20,
+    fontWeight: '400'
+  },
+  modalCancelButton: {
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 20
+  },
+  modalCancelText: {
+    fontSize: 15,
+    fontWeight: '600'
   }
 });

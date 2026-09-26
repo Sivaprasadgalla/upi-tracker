@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView
+  SafeAreaView,
+  Platform,
+  Alert
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { BiometricService, BiometricType } from '../../services/biometricService';
@@ -20,16 +22,20 @@ export const BiometricLockScreen: React.FC<Props> = ({ onUnlock }) => {
   const [biometricType, setBiometricType] = useState<BiometricType>('NONE');
   const [biometricLabel, setBiometricLabel] = useState<string>('Face ID');
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [enteredPin, setEnteredPin] = useState<string>('');
+  const [isVerifying, setIsVerifying] = useState<boolean>(false);
 
   useEffect(() => {
     BiometricService.getBiometricType().then(setBiometricType);
     BiometricService.getBiometricLabel().then(setBiometricLabel);
 
-    // Auto-prompt Face ID on display
-    triggerAuth(false);
+    // On native mobile with biometric hardware, prompt Face ID/Fingerprint on launch
+    if (Platform.OS !== 'web') {
+      triggerNativeAuth(false);
+    }
   }, []);
 
-  const triggerAuth = async (usePasscode: boolean = false) => {
+  const triggerNativeAuth = async (usePasscode: boolean = false) => {
     setErrorMessage('');
     const res = await BiometricService.authenticate(
       usePasscode ? 'Enter device passcode' : 'Unlock UPI Tracker with Face ID',
@@ -37,18 +43,109 @@ export const BiometricLockScreen: React.FC<Props> = ({ onUnlock }) => {
     );
 
     if (res.success) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch {}
       onUnlock();
-    } else {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } else if (res.error && !res.error.includes('cancel')) {
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } catch {}
       setErrorMessage(res.error || 'Authentication canceled or not recognized.');
     }
   };
 
+  const handleDigitPress = useCallback(
+    async (digit: string) => {
+      if (isVerifying || enteredPin.length >= 4) return;
+
+      const nextPin = enteredPin + digit;
+      setEnteredPin(nextPin);
+      setErrorMessage('');
+
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {}
+
+      if (nextPin.length === 4) {
+        setIsVerifying(true);
+        const valid = await BiometricService.verifyPin(nextPin);
+        if (valid) {
+          try {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } catch {}
+          onUnlock();
+        } else {
+          try {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          } catch {}
+          setErrorMessage('Incorrect PIN. Please try again.');
+          setTimeout(() => {
+            setEnteredPin('');
+            setIsVerifying(false);
+          }, 400);
+        }
+      }
+    },
+    [enteredPin, isVerifying, onUnlock]
+  );
+
+  const handleDeletePress = useCallback(() => {
+    if (enteredPin.length > 0) {
+      setEnteredPin((prev) => prev.slice(0, -1));
+      setErrorMessage('');
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {}
+    }
+  }, [enteredPin]);
+
+  // Web physical keyboard support
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (/^[0-9]$/.test(e.key)) {
+          handleDigitPress(e.key);
+        } else if (e.key === 'Backspace') {
+          handleDeletePress();
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [handleDigitPress, handleDeletePress]);
+
+  const handleResetLock = () => {
+    Alert.alert(
+      'Reset App Security Lock?',
+      'This will disable the security lock so you can access your dashboard. You can re-enable and set a new PIN in Settings.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset Lock',
+          style: 'destructive',
+          onPress: async () => {
+            await BiometricService.resetPin();
+            onUnlock();
+          }
+        }
+      ]
+    );
+  };
+
+  const keypadRows = [
+    ['1', '2', '3'],
+    ['4', '5', '6'],
+    ['7', '8', '9'],
+    ['biometric', '0', 'delete']
+  ];
+
+  const hasBiometricOption = biometricType === 'FACE_ID' || biometricType === 'FINGERPRINT';
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={styles.content}>
-        {/* Face ID Icon with System Blue Halo */}
+        {/* Lock Icon */}
         <TouchableOpacity
           style={[
             styles.iconCircle,
@@ -57,51 +154,118 @@ export const BiometricLockScreen: React.FC<Props> = ({ onUnlock }) => {
               borderColor: isDark ? 'rgba(10, 132, 255, 0.3)' : 'rgba(0, 122, 255, 0.25)'
             }
           ]}
-          onPress={() => triggerAuth(false)}
+          onPress={() => triggerNativeAuth(false)}
           activeOpacity={0.7}
         >
-          <Icon name="faceid" size={52} color={theme.primary} />
+          <Icon name={hasBiometricOption ? 'faceid' : 'lock'} size={44} color={theme.primary} />
         </TouchableOpacity>
 
         <Text style={[styles.title, { color: theme.textPrimary }]}>UPI Tracker Locked</Text>
         <Text style={[styles.subTitle, { color: theme.textSecondary }]}>
-          Your financial transactions and limits are protected by {biometricLabel}.
+          Enter 4-digit PIN to access your financial data
         </Text>
 
+        {/* 4 PIN Dots */}
+        <View style={styles.dotsRow}>
+          {[0, 1, 2, 3].map((index) => {
+            const isFilled = index < enteredPin.length;
+            return (
+              <View
+                key={index}
+                style={[
+                  styles.dot,
+                  {
+                    backgroundColor: isFilled ? theme.primary : 'transparent',
+                    borderColor: isFilled ? theme.primary : theme.textSecondary
+                  }
+                ]}
+              />
+            );
+          })}
+        </View>
+
+        {/* Error message */}
         {errorMessage ? (
           <View style={styles.errorBox}>
             <Text style={styles.errorText}>{errorMessage}</Text>
-            <Text style={[styles.errorHint, { color: theme.textSecondary }]}>
-              Tip: If Face ID doesn't show, ensure "Face ID" is toggled ON in iPhone Settings → Expo Go.
-            </Text>
           </View>
         ) : null}
 
-        {/* Primary Face ID Unlock Button */}
+        {/* Numeric Keypad */}
+        <View style={styles.keypadContainer}>
+          {keypadRows.map((row, rowIdx) => (
+            <View key={rowIdx} style={styles.keypadRow}>
+              {row.map((key) => {
+                if (key === 'biometric') {
+                  if (hasBiometricOption) {
+                    return (
+                      <TouchableOpacity
+                        key={key}
+                        style={[styles.keyButton, styles.emptyKey]}
+                        onPress={() => triggerNativeAuth(false)}
+                        activeOpacity={0.7}
+                      >
+                        <Icon name="faceid" size={28} color={theme.primary} />
+                      </TouchableOpacity>
+                    );
+                  }
+                  return <View key={key} style={[styles.keyButton, styles.emptyKey]} />;
+                }
+
+                if (key === 'delete') {
+                  return (
+                    <TouchableOpacity
+                      key={key}
+                      style={[styles.keyButton, styles.emptyKey]}
+                      onPress={handleDeletePress}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.deleteKeyText, { color: theme.textPrimary }]}>⌫</Text>
+                    </TouchableOpacity>
+                  );
+                }
+
+                return (
+                  <TouchableOpacity
+                    key={key}
+                    style={[
+                      styles.keyButton,
+                      {
+                        backgroundColor: isDark
+                          ? 'rgba(255, 255, 255, 0.08)'
+                          : 'rgba(0, 0, 0, 0.04)',
+                        borderColor: isDark
+                          ? 'rgba(255, 255, 255, 0.12)'
+                          : 'rgba(0, 0, 0, 0.08)'
+                      }
+                    ]}
+                    onPress={() => handleDigitPress(key)}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={[styles.keyText, { color: theme.textPrimary }]}>{key}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ))}
+        </View>
+
+        {/* Reset / Forgot PIN Option */}
         <TouchableOpacity
-          style={[styles.unlockButton, { backgroundColor: theme.primary }]}
-          onPress={() => triggerAuth(false)}
-          activeOpacity={0.8}
+          style={styles.forgotButton}
+          onPress={handleResetLock}
+          activeOpacity={0.7}
         >
-          <Text style={styles.unlockButtonText}>
-            {biometricType === 'FACE_ID' ? 'Unlock with Face ID' : `Unlock with ${biometricLabel}`}
+          <Text style={[styles.forgotButtonText, { color: theme.textSecondary }]}>
+            Forgot PIN? Reset Lock
           </Text>
         </TouchableOpacity>
 
-        {/* Fallback to Device Passcode Button */}
-        <TouchableOpacity
-          style={styles.passcodeButton}
-          onPress={() => triggerAuth(true)}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.passcodeButtonText, { color: theme.primary }]}>Use Device Passcode</Text>
-        </TouchableOpacity>
-
-        {/* Security Notice */}
+        {/* Security Notice Footer */}
         <View style={styles.footer}>
-          <Icon name="shield" size={15} color={theme.textSecondary} />
+          <Icon name="shield" size={14} color={theme.textSecondary} />
           <Text style={[styles.footerText, { color: theme.textSecondary }]}>
-            Protected by Apple Secure Enclave
+            Protected by Apple Secure Enclave & Session Encryption
           </Text>
         </View>
       </View>
@@ -117,80 +281,107 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 28
+    paddingHorizontal: 24,
+    maxWidth: 420,
+    width: '100%',
+    alignSelf: 'center'
   },
   iconCircle: {
-    width: 104,
-    height: 104,
-    borderRadius: 52,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 26,
+    marginBottom: 18,
     borderWidth: 1.5
   },
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '700',
     letterSpacing: -0.4,
-    marginBottom: 10,
+    marginBottom: 6,
     textAlign: 'center'
   },
   subTitle: {
-    fontSize: 16,
+    fontSize: 14,
     textAlign: 'center',
-    lineHeight: 23,
-    marginBottom: 36,
-    paddingHorizontal: 16
+    lineHeight: 20,
+    marginBottom: 20,
+    paddingHorizontal: 20
+  },
+  dotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    gap: 18
+  },
+  dot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1.5
   },
   errorBox: {
-    padding: 14,
-    borderRadius: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 10,
     backgroundColor: 'rgba(255, 69, 58, 0.12)',
-    marginBottom: 20,
-    width: '100%',
-    borderWidth: 0.5,
-    borderColor: 'rgba(255, 69, 58, 0.3)'
+    marginBottom: 12
   },
   errorText: {
     color: '#FF453A',
-    fontSize: 14,
-    textAlign: 'center',
-    fontWeight: '500',
-    marginBottom: 4
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center'
   },
-  errorHint: {
-    fontSize: 12,
-    textAlign: 'center',
-    lineHeight: 16
-  },
-  unlockButton: {
+  keypadContainer: {
     width: '100%',
-    height: 54,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
+    maxWidth: 300,
+    marginBottom: 16
+  },
+  keypadRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: 14
   },
-  unlockButtonText: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '600'
+  keyButton: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 0.5
   },
-  passcodeButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    marginBottom: 28
+  emptyKey: {
+    backgroundColor: 'transparent',
+    borderWidth: 0
   },
-  passcodeButtonText: {
-    fontSize: 16,
-    fontWeight: '600'
+  keyText: {
+    fontSize: 28,
+    fontWeight: '500'
+  },
+  deleteKeyText: {
+    fontSize: 24,
+    fontWeight: '400'
+  },
+  forgotButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginBottom: 14
+  },
+  forgotButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    textDecorationLine: 'underline'
   },
   footer: {
     flexDirection: 'row',
-    alignItems: 'center'
+    alignItems: 'center',
+    marginTop: 8
   },
   footerText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '500',
     marginLeft: 6
   }
