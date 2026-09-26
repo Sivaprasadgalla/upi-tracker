@@ -154,6 +154,13 @@ export const SetupTrackingScreen: React.FC = () => {
     }
   }, [pinModalVisible, pinStep, enteredPin, confirmPin]);
 
+  const isIOSUser =
+    Platform.OS === 'ios' ||
+    (Platform.OS === 'web' &&
+      typeof navigator !== 'undefined' &&
+      (/iPhone|iPad|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && (navigator as any).maxTouchPoints > 1)));
+
   const shortcutSteps = [
     {
       step: '1',
@@ -354,34 +361,38 @@ export const SetupTrackingScreen: React.FC = () => {
           )}
         </View>
 
-        {/* Section 4: Apple Shortcuts Guide */}
-        <Text style={[styles.sectionHeader, { color: theme.textSecondary, marginTop: 24 }]}>
-          AUTOMATED TRACKING SETUP
-        </Text>
-        <View style={[styles.insetGroupCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-          <View style={[styles.infoBanner, { backgroundColor: theme.fill, borderBottomColor: theme.separator }]}>
-            <Text style={[styles.infoBannerText, { color: theme.textSecondary }]}>
-              iOS isolates third-party apps from reading notifications directly. Use Apple’s native Shortcuts Automations to capture bank SMS and UPI alerts seamlessly.
+        {/* Section 4: Apple Shortcuts Guide (Displayed only to iOS users) */}
+        {isIOSUser && (
+          <>
+            <Text style={[styles.sectionHeader, { color: theme.textSecondary, marginTop: 24 }]}>
+              AUTOMATED TRACKING SETUP (APPLE SHORTCUTS)
             </Text>
-          </View>
-
-          {shortcutSteps.map((step, idx) => (
-            <View key={step.step}>
-              <View style={styles.stepRow}>
-                <View style={[styles.stepBadge, { backgroundColor: theme.primaryLight }]}>
-                  <Text style={[styles.stepBadgeText, { color: theme.primary }]}>{step.step}</Text>
-                </View>
-                <View style={styles.stepContent}>
-                  <Text style={[styles.stepTitle, { color: theme.textPrimary }]}>{step.title}</Text>
-                  <Text style={[styles.stepDesc, { color: theme.textSecondary }]}>{step.desc}</Text>
-                </View>
+            <View style={[styles.insetGroupCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+              <View style={[styles.infoBanner, { backgroundColor: theme.fill, borderBottomColor: theme.separator }]}>
+                <Text style={[styles.infoBannerText, { color: theme.textSecondary }]}>
+                  iOS isolates third-party apps from reading notifications directly. Use Apple’s native Shortcuts Automations to capture bank SMS and UPI alerts seamlessly.
+                </Text>
               </View>
-              {idx < shortcutSteps.length - 1 && (
-                <View style={[styles.hairline, { backgroundColor: theme.separator }]} />
-              )}
+
+              {shortcutSteps.map((step, idx) => (
+                <View key={step.step}>
+                  <View style={styles.stepRow}>
+                    <View style={[styles.stepBadge, { backgroundColor: theme.primaryLight }]}>
+                      <Text style={[styles.stepBadgeText, { color: theme.primary }]}>{step.step}</Text>
+                    </View>
+                    <View style={styles.stepContent}>
+                      <Text style={[styles.stepTitle, { color: theme.textPrimary }]}>{step.title}</Text>
+                      <Text style={[styles.stepDesc, { color: theme.textSecondary }]}>{step.desc}</Text>
+                    </View>
+                  </View>
+                  {idx < shortcutSteps.length - 1 && (
+                    <View style={[styles.hairline, { backgroundColor: theme.separator }]} />
+                  )}
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
+          </>
+        )}
       </ScrollView>
 
       {/* 4-Digit Security PIN Modal */}
