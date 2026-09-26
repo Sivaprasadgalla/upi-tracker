@@ -313,7 +313,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16
   },
   rowLabelContainer: {
-    flex: 1
+    flex: 1,
+    marginRight: 14
   },
   rowLabel: {
     fontSize: 17,
@@ -321,14 +322,18 @@ const styles = StyleSheet.create({
   },
   rowSubLabel: {
     fontSize: 13,
-    marginTop: 2
+    marginTop: 2,
+    lineHeight: 17
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 10,
     paddingHorizontal: 12,
-    height: 42
+    height: 42,
+    width: 130,
+    flexShrink: 0,
+    justifyContent: 'flex-end'
   },
   currencyPrefix: {
     fontSize: 17,
@@ -338,8 +343,10 @@ const styles = StyleSheet.create({
   numericInput: {
     fontSize: 18,
     fontWeight: '700',
-    minWidth: 80,
-    textAlign: 'right'
+    flex: 1,
+    minWidth: 0,
+    textAlign: 'right',
+    padding: 0
   },
   hairline: {
     height: 0.5,
