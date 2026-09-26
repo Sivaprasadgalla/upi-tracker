@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "UPI Tracker",
+    "slug": "upi-tracker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#090B10"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.upitracker.app",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "remote-notification",
+          "fetch"
+        ],
+        "NSFaceIDUsageDescription": "UPI Tracker requires Face ID to securely authenticate and protect your financial transactions."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#121316"
+      },
+      "package": "com.upitracker.app",
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "POST_NOTIFICATIONS",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT"
+      ]
+    },
+    "scheme": "upitracker",
+    "plugins": [
+      "expo-asset",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow UPI Tracker to use Face ID to securely authenticate and view your transactions."
+        }
+      ]
+    ]
+  }
+}
