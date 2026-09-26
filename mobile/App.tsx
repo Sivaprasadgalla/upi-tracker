@@ -27,7 +27,7 @@ interface TabItem {
 const MainNavigator: React.FC = () => {
   const { activeTab, setActiveTab, unreadCount, isAppLocked, unlockApp } = useApp();
   const { theme } = useTheme();
-  const isIOS = Platform.OS === 'ios';
+  const isIOS = Platform.OS === 'ios' || Platform.OS === 'web';
 
   // Render Biometric Screen if app is locked
   if (isAppLocked) {
