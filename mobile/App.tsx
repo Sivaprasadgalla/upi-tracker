@@ -16,6 +16,7 @@ import { AnalyticsScreen } from './src/screens/AnalyticsScreen';
 import { SetupTrackingScreen } from './src/screens/SetupTrackingScreen';
 import { BiometricLockScreen } from './src/components/common/BiometricLockScreen';
 import { Icon, IconName } from './src/components/common/Icon';
+import { MobileShell } from './src/components/web/MobileShell';
 
 interface TabItem {
   id: 'dashboard' | 'transactions' | 'budgets' | 'analytics' | 'setup';
@@ -126,7 +127,9 @@ export default function App() {
   return (
     <ThemeProvider>
       <AppProvider>
-        <MainNavigator />
+        <MobileShell>
+          <MainNavigator />
+        </MobileShell>
       </AppProvider>
     </ThemeProvider>
   );
@@ -137,7 +140,8 @@ const styles = StyleSheet.create({
     flex: 1
   },
   screenContainer: {
-    flex: 1
+    flex: 1,
+    paddingTop: Platform.OS === 'web' ? 44 : 0
   },
   bottomNavContainer: {
     position: 'absolute',

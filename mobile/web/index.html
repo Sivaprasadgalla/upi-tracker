@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <title>UPI Tracker • Expense Management</title>
+
+    <!-- Apple iOS Web App & PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="UPI Tracker" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#090B10" />
+    <meta name="description" content="Production-grade cross-platform UPI Expense Tracker with Apple Cupertino Design" />
+
+    <!-- Favicon & Touch Icon -->
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/favicon.ico" />
+
+    <!-- Web App Mobile Styling Reset -->
+    <style id="expo-reset">
+      *, *::before, *::after {
+        -webkit-tap-highlight-color: transparent !important;
+        -webkit-touch-callout: none;
+        box-sizing: border-box;
+      }
+
+      html, body {
+        height: 100%;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: #07080B;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+        overscroll-behavior: none;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      input, textarea {
+        user-select: text !important;
+        -webkit-user-select: text !important;
+      }
+
+      #root {
+        display: flex;
+        height: 100%;
+        width: 100%;
+        flex: 1;
+        overflow: hidden;
+      }
+
+      /* Hide ugly browser scrollbars while keeping smooth scrolling */
+      ::-webkit-scrollbar {
+        width: 0px;
+        height: 0px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <noscript>
+      You need to enable JavaScript to run UPI Tracker.
+    </noscript>
+    <div id="root"></div>
+  </body>
+</html>

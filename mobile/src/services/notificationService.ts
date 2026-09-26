@@ -18,30 +18,46 @@ export class NotificationService {
    * Request notification permissions from user (iOS & Android 13+)
    */
   public static async requestPermissions(): Promise<boolean> {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    if (finalStatus !== 'granted') {
-      console.warn('Notification permission not granted.');
+    if (Platform.OS === 'web') {
+      try {
+        if (typeof window !== 'undefined' && 'Notification' in window) {
+          if (Notification.permission === 'default') {
+            await Notification.requestPermission();
+          }
+          return Notification.permission === 'granted';
+        }
+      } catch {}
       return false;
     }
 
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('upi_limits', {
-        name: 'UPI Limit Alerts & Reminders',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF453A',
-        sound: 'default'
-      });
-    }
+    try {
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
 
-    return true;
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+
+      if (finalStatus !== 'granted') {
+        console.warn('Notification permission not granted.');
+        return false;
+      }
+
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('upi_limits', {
+          name: 'UPI Limit Alerts & Reminders',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF453A',
+          sound: 'default'
+        });
+      }
+
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -53,6 +69,13 @@ export class NotificationService {
     isExceeded: boolean = false
   ): Promise<void> {
     try {
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+          new Notification(title, { body, icon: '/favicon.ico' });
+        }
+        return;
+      }
+
       if (Platform.OS === 'ios') {
         await Haptics.notificationAsync(
           isExceeded
