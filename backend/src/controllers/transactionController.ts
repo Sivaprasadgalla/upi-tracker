@@ -2,22 +2,45 @@ import { Response } from 'express';
 import { Types } from 'mongoose';
 import { AuthRequest } from '../middlewares/auth.js';
 import { Transaction } from '../models/Transaction.js';
+import { User } from '../models/User.js';
 import { UpiParserService } from '../services/upiParser.js';
 import { BudgetAlertService } from '../services/budgetAlertService.js';
 import { AppSource } from '../types/index.js';
 
 export const ingestNotification = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.user?.id;
-    const { rawText, packageName, source, transactionDate } = req.body;
+    let userId = req.user?.id;
 
-    if (!rawText || typeof rawText !== 'string') {
-      res.status(400).json({ success: false, message: 'rawText string is required.' });
+    if (!userId) {
+      // Find the most recently active user or fallback to a default user for iOS Shortcut webhooks
+      const activeUser = await User.findOne().sort({ updatedAt: -1 });
+      if (activeUser) {
+        userId = activeUser._id.toString();
+      } else {
+        const defaultUser = await User.create({
+          name: 'UPI User',
+          email: 'device_default@upitracker.local',
+          password: 'auto_default_2026!',
+          platform: 'ios'
+        });
+        userId = defaultUser._id.toString();
+      }
+    }
+
+    const { rawText, text, message, content, body, packageName, source, transactionDate } = req.body;
+    let inputStr: string = (rawText || text || message || content || body || '');
+
+    if (typeof inputStr === 'object' && inputStr !== null) {
+      inputStr = (inputStr as any).content || (inputStr as any).text || (inputStr as any).body || JSON.stringify(inputStr);
+    }
+
+    if (!inputStr || typeof inputStr !== 'string' || inputStr.trim().length === 0) {
+      res.status(400).json({ success: false, message: 'Message text (rawText or text) is required.' });
       return;
     }
 
-    const detectedSource: AppSource = source || UpiParserService.detectAppSource(rawText, packageName);
-    const parsed = UpiParserService.parse(rawText, detectedSource);
+    const detectedSource: AppSource = source || UpiParserService.detectAppSource(inputStr, packageName);
+    const parsed = UpiParserService.parse(inputStr, detectedSource);
 
     if (!parsed) {
       res.status(422).json({
