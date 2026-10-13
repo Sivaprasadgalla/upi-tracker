@@ -18,7 +18,17 @@ const PORT = process.env.PORT || 5000;
 // Security & Parsing Middlewares
 app.use(helmet());
 app.use(cors({ origin: process.env.CLIENT_URL || '*' }));
+
+// Handle header aliases/typos from Apple Shortcuts (e.g. Content-Text -> Content-Type)
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  if (!req.headers['content-type'] && (req.headers as any)['content-text']) {
+    req.headers['content-type'] = (req.headers as any)['content-text'];
+  }
+  next();
+});
+
 app.use(express.json({ limit: '1mb' }));
+app.use(express.text({ type: ['text/*', 'application/text'] }));
 app.use(express.urlencoded({ extended: true }));
 
 if (process.env.NODE_ENV !== 'test') {

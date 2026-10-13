@@ -28,7 +28,16 @@ export const ingestNotification = async (req: AuthRequest, res: Response): Promi
       }
     }
 
-    const { rawText, text, message, content, body, packageName, source, transactionDate } = req.body;
+    let payload = req.body || {};
+    if (typeof payload === 'string') {
+      try {
+        payload = JSON.parse(payload);
+      } catch {
+        payload = { rawText: payload };
+      }
+    }
+
+    const { rawText, text, message, content, body, packageName, source, transactionDate } = payload;
     let inputStr: string = (rawText || text || message || content || body || '');
 
     if (typeof inputStr === 'object' && inputStr !== null) {
