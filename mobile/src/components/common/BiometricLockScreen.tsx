@@ -1,17 +1,19 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   Platform,
-  Alert
+  Animated,
+  AppState
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { BiometricService, BiometricType } from '../../services/biometricService';
+import { BiometricService } from '../../services/biometricService';
 import { useTheme } from '../../theme/ThemeContext';
 import { Icon } from './Icon';
+import { AppLogo } from './AppLogo';
 
 interface Props {
   onUnlock: () => void;
@@ -19,256 +21,132 @@ interface Props {
 
 export const BiometricLockScreen: React.FC<Props> = ({ onUnlock }) => {
   const { theme, isDark } = useTheme();
-  const [biometricType, setBiometricType] = useState<BiometricType>('NONE');
   const [biometricLabel, setBiometricLabel] = useState<string>('Face ID');
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const [enteredPin, setEnteredPin] = useState<string>('');
-  const [isVerifying, setIsVerifying] = useState<boolean>(false);
+  const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
+  const isPromptingRef = useRef<boolean>(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
-    BiometricService.getBiometricType().then(setBiometricType);
-    BiometricService.getBiometricLabel().then(setBiometricLabel);
-
-    // On native mobile with biometric hardware, prompt Face ID/Fingerprint on launch
-    if (Platform.OS !== 'web') {
-      triggerNativeAuth(false);
-    }
-  }, []);
-
-  const triggerNativeAuth = async (usePasscode: boolean = false) => {
-    setErrorMessage('');
-    const res = await BiometricService.authenticate(
-      usePasscode ? 'Enter device passcode' : 'Unlock UPI Tracker with Face ID',
-      usePasscode
-    );
-
-    if (res.success) {
-      try {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } catch {}
+  const triggerNativeAuth = useCallback(async () => {
+    if (isPromptingRef.current) return;
+    if (Platform.OS === 'web') {
       onUnlock();
-    } else if (res.error && !res.error.includes('cancel')) {
-      try {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      } catch {}
-      setErrorMessage(res.error || 'Authentication canceled or not recognized.');
+      return;
     }
-  };
 
-  const handleDigitPress = useCallback(
-    async (digit: string) => {
-      if (isVerifying || enteredPin.length >= 4) return;
+    isPromptingRef.current = true;
+    setIsAuthenticating(true);
+    setErrorMessage('');
 
-      const nextPin = enteredPin + digit;
-      setEnteredPin(nextPin);
-      setErrorMessage('');
+    try {
+      const res = await BiometricService.authenticate('Unlock UPI Tracker');
 
-      try {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      } catch {}
-
-      if (nextPin.length === 4) {
-        setIsVerifying(true);
-        const valid = await BiometricService.verifyPin(nextPin);
-        if (valid) {
-          try {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          } catch {}
-          onUnlock();
+      if (res.success) {
+        try {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } catch {}
+        onUnlock();
+      } else {
+        if (res.errorCode === 'user_cancel' || res.errorCode === 'system_cancel' || res.errorCode === 'app_cancel') {
+          setErrorMessage('Authentication canceled. Tap below to unlock.');
         } else {
           try {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           } catch {}
-          setErrorMessage('Incorrect PIN. Please try again.');
-          setTimeout(() => {
-            setEnteredPin('');
-            setIsVerifying(false);
-          }, 400);
+          setErrorMessage(res.error || 'Authentication failed. Tap below to retry.');
         }
       }
-    },
-    [enteredPin, isVerifying, onUnlock]
-  );
-
-  const handleDeletePress = useCallback(() => {
-    if (enteredPin.length > 0) {
-      setEnteredPin((prev) => prev.slice(0, -1));
-      setErrorMessage('');
-      try {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      } catch {}
+    } finally {
+      setIsAuthenticating(false);
+      setTimeout(() => {
+        isPromptingRef.current = false;
+      }, 400);
     }
-  }, [enteredPin]);
+  }, [onUnlock]);
 
-  // Web physical keyboard support
   useEffect(() => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const handleKeyDown = (e: KeyboardEvent) => {
-        if (/^[0-9]$/.test(e.key)) {
-          handleDigitPress(e.key);
-        } else if (e.key === 'Backspace') {
-          handleDeletePress();
-        }
-      };
-      window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
-    }
-  }, [handleDigitPress, handleDeletePress]);
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true
+    }).start();
 
-  const handleResetLock = () => {
-    Alert.alert(
-      'Reset App Security Lock?',
-      'This will disable the security lock so you can access your dashboard. You can re-enable and set a new PIN in Settings.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset Lock',
-          style: 'destructive',
-          onPress: async () => {
-            await BiometricService.resetPin();
-            onUnlock();
-          }
-        }
-      ]
-    );
-  };
+    BiometricService.getBiometricLabel().then(setBiometricLabel);
 
-  const keypadRows = [
-    ['1', '2', '3'],
-    ['4', '5', '6'],
-    ['7', '8', '9'],
-    ['biometric', '0', 'delete']
-  ];
+    // Prompt native Face ID / Passcode sheet immediately on mount
+    const timer = setTimeout(() => {
+      triggerNativeAuth();
+    }, 250);
 
-  const hasBiometricOption = biometricType === 'FACE_ID' || biometricType === 'FINGERPRINT';
+    // Re-prompt when app returns from background
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        triggerNativeAuth();
+      }
+    });
+
+    return () => {
+      clearTimeout(timer);
+      sub.remove();
+    };
+  }, [triggerNativeAuth]);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={styles.content}>
-        {/* Lock Icon */}
+    <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[styles.container, { backgroundColor: theme.background }]}>
+      <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
+        {/* App Logo & Lock Indicator */}
         <TouchableOpacity
-          style={[
-            styles.iconCircle,
-            {
-              backgroundColor: isDark ? 'rgba(10, 132, 255, 0.15)' : 'rgba(0, 122, 255, 0.12)',
-              borderColor: isDark ? 'rgba(10, 132, 255, 0.3)' : 'rgba(0, 122, 255, 0.25)'
-            }
-          ]}
-          onPress={() => triggerNativeAuth(false)}
-          activeOpacity={0.7}
+          style={styles.logoBadgeContainer}
+          onPress={triggerNativeAuth}
+          activeOpacity={0.8}
         >
-          <Icon name={hasBiometricOption ? 'faceid' : 'lock'} size={44} color={theme.primary} />
+          <AppLogo size={88} showGlow={true} />
+          <View
+            style={[
+              styles.miniLockBadge,
+              {
+                backgroundColor: theme.primary,
+                borderColor: theme.background
+              }
+            ]}
+          >
+            <Icon name="faceid" size={18} color="#FFFFFF" />
+          </View>
         </TouchableOpacity>
 
         <Text style={[styles.title, { color: theme.textPrimary }]}>UPI Tracker Locked</Text>
         <Text style={[styles.subTitle, { color: theme.textSecondary }]}>
-          Enter 4-digit PIN to access your financial data
+          Authentication required with {biometricLabel} or your device passcode
         </Text>
 
-        {/* 4 PIN Dots */}
-        <View style={styles.dotsRow}>
-          {[0, 1, 2, 3].map((index) => {
-            const isFilled = index < enteredPin.length;
-            return (
-              <View
-                key={index}
-                style={[
-                  styles.dot,
-                  {
-                    backgroundColor: isFilled ? theme.primary : 'transparent',
-                    borderColor: isFilled ? theme.primary : theme.textSecondary
-                  }
-                ]}
-              />
-            );
-          })}
-        </View>
-
-        {/* Error message */}
+        {/* Status / Error Message */}
         {errorMessage ? (
           <View style={styles.errorBox}>
             <Text style={styles.errorText}>{errorMessage}</Text>
           </View>
         ) : null}
 
-        {/* Numeric Keypad */}
-        <View style={styles.keypadContainer}>
-          {keypadRows.map((row, rowIdx) => (
-            <View key={rowIdx} style={styles.keypadRow}>
-              {row.map((key) => {
-                if (key === 'biometric') {
-                  if (hasBiometricOption) {
-                    return (
-                      <TouchableOpacity
-                        key={key}
-                        style={[styles.keyButton, styles.emptyKey]}
-                        onPress={() => triggerNativeAuth(false)}
-                        activeOpacity={0.7}
-                      >
-                        <Icon name="faceid" size={28} color={theme.primary} />
-                      </TouchableOpacity>
-                    );
-                  }
-                  return <View key={key} style={[styles.keyButton, styles.emptyKey]} />;
-                }
-
-                if (key === 'delete') {
-                  return (
-                    <TouchableOpacity
-                      key={key}
-                      style={[styles.keyButton, styles.emptyKey]}
-                      onPress={handleDeletePress}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.deleteKeyText, { color: theme.textPrimary }]}>⌫</Text>
-                    </TouchableOpacity>
-                  );
-                }
-
-                return (
-                  <TouchableOpacity
-                    key={key}
-                    style={[
-                      styles.keyButton,
-                      {
-                        backgroundColor: isDark
-                          ? 'rgba(255, 255, 255, 0.08)'
-                          : 'rgba(0, 0, 0, 0.04)',
-                        borderColor: isDark
-                          ? 'rgba(255, 255, 255, 0.12)'
-                          : 'rgba(0, 0, 0, 0.08)'
-                      }
-                    ]}
-                    onPress={() => handleDigitPress(key)}
-                    activeOpacity={0.6}
-                  >
-                    <Text style={[styles.keyText, { color: theme.textPrimary }]}>{key}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ))}
-        </View>
-
-        {/* Reset / Forgot PIN Option */}
+        {/* Primary Action Button */}
         <TouchableOpacity
-          style={styles.forgotButton}
-          onPress={handleResetLock}
-          activeOpacity={0.7}
+          style={[styles.unlockButton, { backgroundColor: theme.primary }]}
+          onPress={triggerNativeAuth}
+          disabled={isAuthenticating}
+          activeOpacity={0.8}
         >
-          <Text style={[styles.forgotButtonText, { color: theme.textSecondary }]}>
-            Forgot PIN? Reset Lock
+          <Icon name="faceid" size={22} color="#FFFFFF" />
+          <Text style={styles.unlockButtonText}>
+            {isAuthenticating ? 'Authenticating...' : `Unlock with ${biometricLabel} / Passcode`}
           </Text>
         </TouchableOpacity>
 
-        {/* Security Notice Footer */}
+        {/* Security Footer Notice */}
         <View style={styles.footer}>
           <Icon name="shield" size={14} color={theme.textSecondary} />
           <Text style={[styles.footerText, { color: theme.textSecondary }]}>
-            Protected by Apple Secure Enclave & Session Encryption
+            Protected by Apple Secure Enclave & Device Passcode
           </Text>
         </View>
-      </View>
+      </Animated.View>
     </SafeAreaView>
   );
 };
@@ -281,53 +159,49 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 28,
     maxWidth: 420,
     width: '100%',
     alignSelf: 'center'
   },
-  iconCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+  logoBadgeContainer: {
+    position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 18,
-    borderWidth: 1.5
+    marginBottom: 28
+  },
+  miniLockBadge: {
+    position: 'absolute',
+    bottom: -6,
+    right: -6,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2.5,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   title: {
     fontSize: 26,
     fontWeight: '700',
     letterSpacing: -0.4,
-    marginBottom: 6,
+    marginBottom: 8,
     textAlign: 'center'
   },
   subTitle: {
-    fontSize: 14,
+    fontSize: 15,
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 20,
-    paddingHorizontal: 20
-  },
-  dotsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    gap: 18
-  },
-  dot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 1.5
+    lineHeight: 22,
+    marginBottom: 28,
+    paddingHorizontal: 16
   },
   errorBox: {
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
     backgroundColor: 'rgba(255, 69, 58, 0.12)',
-    marginBottom: 12
+    marginBottom: 20,
+    maxWidth: 320
   },
   errorText: {
     color: '#FF453A',
@@ -335,50 +209,31 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center'
   },
-  keypadContainer: {
-    width: '100%',
-    maxWidth: 300,
-    marginBottom: 16
-  },
-  keypadRow: {
+  unlockButton: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 14
-  },
-  keyButton: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 0.5
+    width: '100%',
+    maxWidth: 320,
+    paddingVertical: 16,
+    borderRadius: 16,
+    marginBottom: 24,
+    gap: 10,
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4
   },
-  emptyKey: {
-    backgroundColor: 'transparent',
-    borderWidth: 0
-  },
-  keyText: {
-    fontSize: 28,
-    fontWeight: '500'
-  },
-  deleteKeyText: {
-    fontSize: 24,
-    fontWeight: '400'
-  },
-  forgotButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    marginBottom: 14
-  },
-  forgotButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    textDecorationLine: 'underline'
+  unlockButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600'
   },
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8
+    marginTop: 12
   },
   footerText: {
     fontSize: 12,

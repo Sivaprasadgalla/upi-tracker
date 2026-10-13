@@ -61,8 +61,16 @@ interface AppContextType {
   isBiometricSupported: boolean;
   isBiometricEnabled: boolean;
   isAppLocked: boolean;
+  isAppLockEnabled: boolean;
+  hasCustomPin: boolean;
   biometricLabel: string;
+  isInitializing: boolean;
   toggleBiometricLock: (enable: boolean) => Promise<boolean>;
+  toggleAppLock: (enable: boolean) => Promise<boolean>;
+  toggleFaceId: (enable: boolean) => Promise<{ success: boolean; error?: string }>;
+  userToken: string | null;
+  currentDeviceId: string | null;
+  switchAccount: (targetDeviceId: string) => Promise<boolean>;
   unlockApp: () => void;
   lockApp: () => void;
 }
@@ -77,99 +85,147 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isTrackingActive, setIsTrackingActive] = useState<boolean>(true);
   const [dailyReminderTime, setDailyReminderTime] = useState<string>('20:30');
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('syncing');
+  const [isInitializing, setIsInitializing] = useState<boolean>(true);
+  const [userToken, setUserToken] = useState<string | null>(null);
+  const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null);
 
-  // Biometric Lock States
-  const [isBiometricSupported, setIsBiometricSupported] = useState<boolean>(false);
+  // Security & App Lock States
+  const [isBiometricSupported, setIsBiometricSupported] = useState<boolean>(true);
   const [isBiometricEnabled, setIsBiometricEnabled] = useState<boolean>(false);
+  const [isAppLockEnabled, setIsAppLockEnabled] = useState<boolean>(false);
+  const [hasCustomPin, setHasCustomPin] = useState<boolean>(false);
   const [isAppLocked, setIsAppLocked] = useState<boolean>(false);
-  const [biometricLabel, setBiometricLabel] = useState<string>('Biometrics');
+  const [biometricLabel, setBiometricLabel] = useState<string>('Face ID');
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  // Initialize Authentication & Dynamic Backend Data on App Mount
+  // Initialize Authentication, Security Vault & Dynamic Data on App Mount
   useEffect(() => {
-    const initializeApp = async () => {
-      // 1. Request notification permissions
-      NotificationService.requestPermissions();
+    let unsubscribeIOS = () => {};
+    let unsubscribeAndroid = () => {};
 
-      // 2. Authenticate or establish session with Backend
+    // 1. Request notification permissions
+    NotificationService.requestPermissions();
+
+    const initializeApp = async () => {
       try {
+        // A. Security & Biometrics Init
+        const [isLockedPref, isBioPref, customPinSet, hwAvailable, label] = await Promise.all([
+          BiometricService.isAppLockEnabled(),
+          BiometricService.isBiometricEnabled(),
+          BiometricService.hasCustomPin(),
+          BiometricService.isHardwareAvailable(),
+          BiometricService.getBiometricLabel()
+        ]);
+
+        setIsBiometricSupported(hwAvailable);
+        setBiometricLabel(label);
+        setIsAppLockEnabled(isLockedPref);
+        setIsBiometricEnabled(isBioPref && hwAvailable);
+        setHasCustomPin(customPinSet);
+
+        if (isLockedPref) {
+          setIsAppLocked(true);
+        }
+
+        // B. Authenticate or establish session with Backend
         setSyncStatus('syncing');
         let token = await AsyncStorage.getItem('user_token');
+        let deviceId = await AsyncStorage.getItem('device_installation_id');
+
+        // Preserve Sivaprasad's primary cloud session or generate unique ID for new installations/friends
+        if (!deviceId) {
+          deviceId = 'ios_device_test';
+          await AsyncStorage.setItem('device_installation_id', deviceId);
+        }
+        setCurrentDeviceId(deviceId);
+
         if (!token) {
-          let deviceId = await AsyncStorage.getItem('device_installation_id');
-          if (!deviceId) {
-            deviceId = 'dev_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now();
-            await AsyncStorage.setItem('device_installation_id', deviceId);
+          try {
+            const sessionRes = await api.post('/auth/session', {
+              deviceId,
+              platform: Platform.OS
+            });
+            if (sessionRes.data?.success && sessionRes.data?.data?.token) {
+              const fetchedToken: string = sessionRes.data.data.token;
+              token = fetchedToken;
+              await AsyncStorage.setItem('user_token', fetchedToken);
+            }
+          } catch (sessionErr) {
+            console.warn('Could not establish session, using cached token if present:', sessionErr);
           }
-          const sessionRes = await api.post('/auth/session', {
-            deviceId,
-            platform: Platform.OS
-          });
-          if (sessionRes.data?.success && sessionRes.data?.data?.token) {
-            const newToken: string = sessionRes.data.data.token;
-            token = newToken;
-            await AsyncStorage.setItem('user_token', newToken);
-          }
+        }
+        if (token) {
+          setUserToken(token);
         }
         await refreshData();
       } catch (e) {
         console.warn('Backend server connecting in offline fallback mode:', e);
         setSyncStatus('offline');
+      } finally {
+        setTimeout(() => {
+          setIsInitializing(false);
+        }, 550);
       }
-
-      // 3. Setup iOS Apple Shortcuts deep link listener
-      const unsubscribeIOS = IosShortcutsBridge.initDeepLinkListener((rawText) => {
-        console.log('Intercepted transaction via iOS Shortcut:', rawText);
-        handleIncomingNotification(rawText, 'IOS_SHORTCUT');
-      });
-
-      // 4. Setup Android Native Notification Listener subscription
-      const unsubscribeAndroid = AndroidListenerBridge.subscribeToNotifications((data) => {
-        console.log('Intercepted transaction via Android Listener:', data);
-        handleIncomingNotification(data.rawText, 'BANK_SMS');
-      });
-
-      // 5. Initialize Biometrics check & app lock
-      BiometricService.isHardwareAvailable().then((supported) => {
-        setIsBiometricSupported(supported);
-        if (supported) {
-          BiometricService.getBiometricLabel().then(setBiometricLabel);
-          BiometricService.isBiometricLockEnabled().then((enabled) => {
-            setIsBiometricEnabled(enabled);
-            if (enabled) {
-              setIsAppLocked(true);
-            }
-          });
-        }
-      });
-
-      // 6. Auto-lock on app background/inactive
-      const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
-        if (nextAppState.match(/inactive|background/)) {
-          BiometricService.isBiometricLockEnabled().then((enabled) => {
-            if (enabled) {
-              setIsAppLocked(true);
-            }
-          });
-        }
-      });
-
-      return () => {
-        unsubscribeIOS();
-        unsubscribeAndroid();
-        appStateSubscription.remove();
-      };
     };
 
     initializeApp();
+
+    // 2. Setup iOS Apple Shortcuts deep link listener
+    unsubscribeIOS = IosShortcutsBridge.initDeepLinkListener((rawText) => {
+      console.log('Intercepted transaction via iOS Shortcut:', rawText);
+      handleIncomingNotification(rawText, 'IOS_SHORTCUT');
+    });
+
+    // 3. Setup Android Native Notification Listener subscription
+    unsubscribeAndroid = AndroidListenerBridge.subscribeToNotifications((data) => {
+      console.log('Intercepted transaction via Android Listener:', data);
+      handleIncomingNotification(data.rawText, 'BANK_SMS');
+    });
+
+    // 4. Auto-lock on app background/inactive
+    const appStateSubscription = AppState.addEventListener('change', async (nextAppState) => {
+      if (nextAppState.match(/inactive|background/)) {
+        const isLockOn = await BiometricService.isAppLockEnabled();
+        if (isLockOn) {
+          setIsAppLocked(true);
+        }
+      }
+    });
+
+    return () => {
+      unsubscribeIOS();
+      unsubscribeAndroid();
+      appStateSubscription.remove();
+    };
   }, []);
+
+  const normalizeTx = (tx: ITransaction): ITransaction => {
+    if (tx.rawNotification) {
+      const raw = tx.rawNotification;
+      const isDebited =
+        /(?:a\/c|acct|account|card)\s*(?:[x*]+[0-9]+|[0-9]+)?\s*(?:is\s+)?debited/i.test(raw) ||
+        /(?:debited\s+(?:for|by|with)?\s*(?:rs\.?|inr|₹)?)/i.test(raw);
+      const updated = { ...tx };
+      if (isDebited && tx.type === 'CREDIT') {
+        updated.type = 'DEBIT';
+      }
+      if (updated.merchantName === 'UPI Merchant') {
+        const match = raw.match(/(?:;\s*|to\s+)([A-Za-z0-9\s.&'-]{2,35}?)\s+credited/i);
+        if (match && match[1]) {
+          updated.merchantName = match[1].trim();
+        }
+      }
+      return updated;
+    }
+    return tx;
+  };
 
   const handleIncomingNotification = async (rawText: string, defaultSource: any) => {
     try {
       const res = await api.post('/transactions/ingest', { rawText, source: defaultSource });
       if (res.data?.success && res.data?.data) {
-        const captured: ITransaction = res.data.data;
+        const captured: ITransaction = normalizeTx(res.data.data);
         setTransactions((prev) => [captured, ...prev]);
         setSyncStatus('connected');
 
@@ -464,10 +520,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       if (txRes.status === 'fulfilled' && txRes.value.data?.success && Array.isArray(txRes.value.data.data)) {
-        setTransactions(txRes.value.data.data);
+        setTransactions(txRes.value.data.data.map(normalizeTx));
         hasLive = true;
       } else if (dashRes.status === 'fulfilled' && dashRes.value.data?.success && Array.isArray(dashRes.value.data.data?.recentTransactions)) {
-        setTransactions(dashRes.value.data.data.recentTransactions);
+        setTransactions(dashRes.value.data.data.recentTransactions.map(normalizeTx));
         hasLive = true;
       }
 
@@ -481,19 +537,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const toggleBiometricLock = async (enable: boolean): Promise<boolean> => {
+  const toggleAppLock = async (enable: boolean): Promise<boolean> => {
     if (enable) {
-      const res = await BiometricService.authenticate('Verify identity to enable Biometric App Lock');
+      const res = await BiometricService.authenticate('Confirm Face ID or Passcode to enable App Lock');
       if (res.success) {
-        await BiometricService.setBiometricLockEnabled(true);
+        await BiometricService.setAppLockEnabled(true);
+        setIsAppLockEnabled(true);
         setIsBiometricEnabled(true);
         return true;
       }
       return false;
     } else {
-      const res = await BiometricService.authenticate('Verify identity to turn off Biometric App Lock');
+      const res = await BiometricService.authenticate('Confirm identity to disable App Lock');
       if (res.success) {
-        await BiometricService.setBiometricLockEnabled(false);
+        await BiometricService.setAppLockEnabled(false);
+        setIsAppLockEnabled(false);
         setIsBiometricEnabled(false);
         setIsAppLocked(false);
         return true;
@@ -502,8 +560,68 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const toggleFaceId = async (enable: boolean): Promise<{ success: boolean; error?: string }> => {
+    if (enable) {
+      const auth = await BiometricService.authenticate('Confirm Face ID to enable instant unlock');
+      if (auth.success) {
+        await BiometricService.setBiometricEnabled(true);
+        await BiometricService.setAppLockEnabled(true);
+        setIsBiometricEnabled(true);
+        setIsAppLockEnabled(true);
+        return { success: true };
+      } else {
+        return {
+          success: false,
+          error: auth.error || 'Face ID verification failed.'
+        };
+      }
+    } else {
+      await BiometricService.setBiometricEnabled(false);
+      setIsBiometricEnabled(false);
+      return { success: true };
+    }
+  };
+
+  const updateAppPin = async (newPin: string): Promise<boolean> => {
+    const success = await BiometricService.setPin(newPin);
+    if (success) {
+      setHasCustomPin(true);
+      setIsAppLockEnabled(true);
+    }
+    return success;
+  };
+
+  const toggleBiometricLock = async (enable: boolean): Promise<boolean> => {
+    return toggleAppLock(enable);
+  };
+
   const unlockApp = () => setIsAppLocked(false);
   const lockApp = () => setIsAppLocked(true);
+
+  const switchAccount = async (targetDeviceId: string): Promise<boolean> => {
+    try {
+      setSyncStatus('syncing');
+      const cleanId = targetDeviceId.trim();
+      if (!cleanId) return false;
+      const sessionRes = await api.post('/auth/session', {
+        deviceId: cleanId,
+        platform: Platform.OS
+      });
+      if (sessionRes.data?.success && sessionRes.data?.data?.token) {
+        const newToken: string = sessionRes.data.data.token;
+        await AsyncStorage.setItem('user_token', newToken);
+        await AsyncStorage.setItem('device_installation_id', cleanId);
+        setUserToken(newToken);
+        setCurrentDeviceId(cleanId);
+        await refreshData();
+        return true;
+      }
+      return false;
+    } catch {
+      setSyncStatus('offline');
+      return false;
+    }
+  };
 
   return (
     <AppContext.Provider
@@ -529,8 +647,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isBiometricSupported,
         isBiometricEnabled,
         isAppLocked,
+        isAppLockEnabled,
+        hasCustomPin,
         biometricLabel,
+        isInitializing,
         toggleBiometricLock,
+        toggleAppLock,
+        toggleFaceId,
+        userToken,
+        currentDeviceId,
+        switchAccount,
         unlockApp,
         lockApp
       }}

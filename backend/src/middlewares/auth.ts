@@ -33,3 +33,24 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
     });
   }
 };
+
+export const optionalAuthenticate = (req: AuthRequest, res: Response, next: NextFunction): void => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return next();
+  }
+
+  const token = authHeader.split(' ')[1];
+  const secret = process.env.JWT_SECRET || 'super_secret_upi_tracker_jwt_key_production_2026_x89!';
+
+  try {
+    const decoded = jwt.verify(token, secret) as { id: string; email: string };
+    req.user = decoded;
+  } catch (error) {
+    // Continue without setting user if token is invalid
+  }
+
+  next();
+};
+

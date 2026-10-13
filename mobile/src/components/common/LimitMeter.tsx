@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
 import { IBudgetStatus } from '../../types/index';
 import { useTheme } from '../../theme/ThemeContext';
 
@@ -22,6 +22,24 @@ export const LimitMeter: React.FC<Props> = ({ budget }) => {
     : theme.success;
 
   const remaining = Math.max(0, budget.limitAmount - budget.spentAmount);
+
+  // Animated progress width
+  const animatedWidth = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(animatedWidth, {
+      toValue: percentage,
+      duration: 500,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false
+    }).start();
+  }, [percentage]);
+
+  const widthInterpolation = animatedWidth.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+    extrapolate: 'clamp'
+  });
 
   return (
     <View style={styles.container}>
@@ -47,11 +65,11 @@ export const LimitMeter: React.FC<Props> = ({ budget }) => {
 
       {/* Smooth Apple Progress Capsule */}
       <View style={[styles.track, { backgroundColor: theme.fill }]}>
-        <View
+        <Animated.View
           style={[
             styles.fill,
             {
-              width: `${percentage}%`,
+              width: widthInterpolation,
               backgroundColor: barColor
             }
           ]}

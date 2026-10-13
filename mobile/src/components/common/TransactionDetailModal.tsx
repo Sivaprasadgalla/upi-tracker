@@ -45,7 +45,9 @@ export const TransactionDetailModal: React.FC<Props> = ({
   });
 
   const handleDeletePress = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    } catch {}
 
     Alert.alert(
       'Delete Payment Record?',
@@ -56,7 +58,9 @@ export const TransactionDetailModal: React.FC<Props> = ({
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            try {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch {}
             onDelete(transaction._id);
             onClose();
           }
@@ -66,7 +70,9 @@ export const TransactionDetailModal: React.FC<Props> = ({
   };
 
   const handleEditPress = () => {
-    Haptics.selectionAsync();
+    try {
+      Haptics.selectionAsync();
+    } catch {}
     onClose();
     onEdit(transaction);
   };
@@ -129,8 +135,26 @@ export const TransactionDetailModal: React.FC<Props> = ({
 
               <View style={styles.detailRow}>
                 <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Payment Source</Text>
-                <Text style={[styles.detailValue, { color: theme.textPrimary }]}>{transaction.appSource}</Text>
+                <Text style={[styles.detailValue, { color: theme.textPrimary }]}>
+                  {transaction.appSource === 'IOS_SHORTCUT'
+                    ? 'Apple Shortcuts'
+                    : transaction.appSource === 'BANK_SMS'
+                    ? 'Bank SMS'
+                    : transaction.appSource}
+                </Text>
               </View>
+
+              {transaction.bankName ? (
+                <>
+                  <View style={[styles.hairline, { backgroundColor: theme.separator }]} />
+                  <View style={styles.detailRow}>
+                    <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Bank &amp; Account</Text>
+                    <Text style={[styles.detailValue, { color: theme.textPrimary }]}>
+                      {transaction.bankName}{transaction.accountLast4 ? ` (A/c ••${transaction.accountLast4})` : ''}
+                    </Text>
+                  </View>
+                </>
+              ) : null}
 
               {transaction.bankRefNumber ? (
                 <>

@@ -441,6 +441,55 @@ export const Icon: React.FC<IconProps> = ({
         </Svg>
       );
 
+    // Categories: Transfer / Investment
+    case 'transfer':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+          <Path
+            d="M17 1L21 5L17 9M7 23L3 19L7 15"
+            stroke={strokeColor}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <Path
+            d="M21 5H9C6.79086 5 5 6.79086 5 9V11M3 19H15C17.2091 19 19 17.2091 19 15V13"
+            stroke={strokeColor}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </Svg>
+      );
+
+    // Common Action: Checkmark
+    case 'check':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+          <Path
+            d="M20 6L9 17L4 12"
+            stroke={strokeColor}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </Svg>
+      );
+
+    // Clock
+    case 'clock':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+          <Circle cx="12" cy="12" r="9" stroke={strokeColor} strokeWidth="2" />
+          <Path
+            d="M12 7V12L15 15"
+            stroke={strokeColor}
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </Svg>
+      );
+
     // Lock
     case 'lock':
       return (

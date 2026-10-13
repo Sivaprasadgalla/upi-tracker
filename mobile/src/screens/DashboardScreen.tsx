@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView
+  RefreshControl
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '../store/AppContext';
 import { useTheme } from '../theme/ThemeContext';
@@ -16,6 +17,7 @@ import { ManualAddTransactionModal } from '../components/common/ManualAddTransac
 import { TransactionDetailModal } from '../components/common/TransactionDetailModal';
 import { FloatingAddButton } from '../components/common/FloatingAddButton';
 import { Icon } from '../components/common/Icon';
+import { AppLogo } from '../components/common/AppLogo';
 import { ITransaction } from '../types/index';
 
 export const DashboardScreen: React.FC = () => {
@@ -31,26 +33,31 @@ export const DashboardScreen: React.FC = () => {
 
   const { theme, isDark } = useTheme();
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isManualModalVisible, setIsManualModalVisible] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<ITransaction | null>(null);
   const [transactionToEdit, setTransactionToEdit] = useState<ITransaction | null>(null);
   const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
 
-  // Compute stats
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  // Memoize computed stats
+  const { todaySpend, monthSpend } = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 
-  let todaySpend = 0;
-  let monthSpend = 0;
+    let today = 0;
+    let month = 0;
 
-  for (const t of transactions) {
-    if (t.type === 'DEBIT') {
-      const txTime = new Date(t.transactionDate).getTime();
-      if (txTime >= todayStart) todaySpend += t.amount;
-      if (txTime >= monthStart) monthSpend += t.amount;
+    for (const t of transactions) {
+      if (t.type === 'DEBIT') {
+        const txTime = new Date(t.transactionDate).getTime();
+        if (txTime >= todayStart) today += t.amount;
+        if (txTime >= monthStart) month += t.amount;
+      }
     }
-  }
+
+    return { todaySpend: today, monthSpend: month };
+  }, [transactions]);
 
   const recentTransactions = transactions.slice(0, 5);
 
@@ -74,20 +81,40 @@ export const DashboardScreen: React.FC = () => {
   };
 
   const handleQuickSync = async () => {
-    Haptics.selectionAsync();
+    try {
+      Haptics.selectionAsync();
+    } catch {}
     await refreshData();
   };
 
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+    await refreshData();
+    setIsRefreshing(false);
+  };
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.primary}
+            colors={[theme.primary]}
+          />
+        }
       >
         {/* Apple Large Title Header */}
         <View style={styles.headerRow}>
-          <View>
-            <Text style={[styles.largeTitle, { color: theme.textPrimary }]}>Overview</Text>
+          <View style={styles.headerTitleGroup}>
+            <AppLogo size={36} />
+            <Text style={[styles.largeTitle, { color: theme.textPrimary, marginLeft: 10 }]}>Overview</Text>
           </View>
 
           <TouchableOpacity
@@ -286,8 +313,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20
   },
+  headerTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
   largeTitle: {
-    fontSize: 36,
+    fontSize: 34,
     fontWeight: '700',
     letterSpacing: 0.38
   },

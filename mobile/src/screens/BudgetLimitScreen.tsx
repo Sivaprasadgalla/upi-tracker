@@ -8,8 +8,9 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
-  SafeAreaView
+  RefreshControl
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '../store/AppContext';
 import { useTheme } from '../theme/ThemeContext';
@@ -22,11 +23,13 @@ export const BudgetLimitScreen: React.FC = () => {
     updateBudgetLimit,
     notifications,
     dailyReminderTime,
-    saveDailyReminder
+    saveDailyReminder,
+    refreshData
   } = useApp();
 
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const dailyBudget = budgets.find((b) => b.period === 'DAILY');
   const monthlyBudget = budgets.find((b) => b.period === 'MONTHLY');
 
@@ -38,7 +41,14 @@ export const BudgetLimitScreen: React.FC = () => {
   const [notifyThreshold, setNotifyThreshold] = useState(true);
   const [notifyExceeded, setNotifyExceeded] = useState(true);
 
-  const reminderTimes = ['19:00', '20:00', '20:30', '21:00', '22:00'];
+  const REMINDER_TIME_OPTIONS = [
+    { value: '19:00', label: '7:00 PM', desc: 'Evening' },
+    { value: '20:00', label: '8:00 PM', desc: 'Post-Dinner' },
+    { value: '20:30', label: '8:30 PM', desc: 'Recommended' },
+    { value: '21:00', label: '9:00 PM', desc: 'Night' },
+    { value: '21:30', label: '9:30 PM', desc: 'Wrap-up' },
+    { value: '22:00', label: '10:00 PM', desc: 'Bedtime' }
+  ];
 
   const handleSaveLimits = async () => {
     const dailyNum = parseFloat(dailyInput);
@@ -49,7 +59,9 @@ export const BudgetLimitScreen: React.FC = () => {
       return;
     }
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {}
 
     await updateBudgetLimit('DAILY', dailyNum, 80);
     await updateBudgetLimit('MONTHLY', monthlyNum, 80);
@@ -58,11 +70,28 @@ export const BudgetLimitScreen: React.FC = () => {
     Alert.alert('Limits Updated', 'Your UPI spending limits and reminders have been successfully saved to the backend database.');
   };
 
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+    await refreshData();
+    setIsRefreshing(false);
+  };
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.primary}
+            colors={[theme.primary]}
+          />
+        }
       >
         {/* Large Title Header */}
         <View style={styles.header}>
@@ -146,43 +175,67 @@ export const BudgetLimitScreen: React.FC = () => {
             <>
               <View style={[styles.hairline, { backgroundColor: theme.separator }]} />
               <View style={styles.timePillSection}>
-                <Text style={[styles.timePickerLabel, { color: theme.textSecondary }]}>Notification Delivery Time</Text>
-                <View style={styles.timePillsRow}>
-                  {reminderTimes.map((time) => {
-                    const isSelected = selectedReminderTime === time;
+                <View style={styles.timeHeaderRow}>
+                  <Icon name="clock" size={15} color={theme.primary} />
+                  <Text style={[styles.timePickerLabel, { color: theme.textSecondary }]}>
+                    NOTIFICATION DELIVERY TIME
+                  </Text>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.timePillsScroll}
+                >
+                  {REMINDER_TIME_OPTIONS.map((item) => {
+                    const isSelected = selectedReminderTime === item.value;
                     return (
                       <TouchableOpacity
-                        key={time}
+                        key={item.value}
                         style={[
-                          styles.timePill,
+                          styles.timeCard,
                           {
                             backgroundColor: isSelected
                               ? theme.primary
-                              : theme.inputBg
+                              : (isDark ? '#2C2C2E' : '#F2F2F7'),
+                            borderColor: isSelected
+                              ? theme.primary
+                              : theme.cardBorder
                           }
                         ]}
                         onPress={() => {
-                          Haptics.selectionAsync();
-                          setSelectedReminderTime(time);
+                          try {
+                            Haptics.selectionAsync();
+                          } catch {}
+                          setSelectedReminderTime(item.value);
                         }}
                         activeOpacity={0.7}
                       >
                         <Text
                           style={[
-                            styles.timePillText,
+                            styles.timeCardTitle,
+                            {
+                              color: isSelected ? '#FFFFFF' : theme.textPrimary
+                            }
+                          ]}
+                        >
+                          {item.label}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.timeCardSubtitle,
                             {
                               color: isSelected
-                                ? '#FFFFFF'
+                                ? 'rgba(255, 255, 255, 0.85)'
                                 : theme.textSecondary
                             }
                           ]}
                         >
-                          {time}
+                          {item.desc}
                         </Text>
                       </TouchableOpacity>
                     );
                   })}
-                </View>
+                </ScrollView>
               </View>
             </>
           )}
@@ -353,25 +406,43 @@ const styles = StyleSheet.create({
     marginLeft: 16
   },
   timePillSection: {
-    padding: 16
+    paddingVertical: 14,
+    paddingHorizontal: 16
+  },
+  timeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10
   },
   timePickerLabel: {
-    fontSize: 14,
-    marginBottom: 10,
-    fontWeight: '500'
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5
   },
-  timePillsRow: {
+  timePillsScroll: {
+    paddingVertical: 4,
+    paddingRight: 8,
     flexDirection: 'row',
-    justifyContent: 'space-between'
+    alignItems: 'center'
   },
-  timePill: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10
+  timeCard: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 98,
+    borderWidth: 1
   },
-  timePillText: {
-    fontSize: 14,
-    fontWeight: '600'
+  timeCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 2
+  },
+  timeCardSubtitle: {
+    fontSize: 11,
+    fontWeight: '500'
   },
   actionButtonsContainer: {
     marginTop: 24

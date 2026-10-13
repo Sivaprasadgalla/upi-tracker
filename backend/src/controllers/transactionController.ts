@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import { AuthRequest } from '../middlewares/auth.js';
 import { Transaction } from '../models/Transaction.js';
 import { User } from '../models/User.js';
+import { Budget } from '../models/Budget.js';
 import { UpiParserService } from '../services/upiParser.js';
 import { BudgetAlertService } from '../services/budgetAlertService.js';
 import { AppSource } from '../types/index.js';
@@ -291,5 +292,31 @@ export const deleteTransaction = async (req: AuthRequest, res: Response): Promis
     res.json({ success: true, message: 'Transaction deleted successfully.' });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message || 'Failed to delete transaction.' });
+  }
+};
+
+export const purgeAllUserData = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ success: false, message: 'Authentication required' });
+      return;
+    }
+
+    // Delete all transactions for this user
+    await Transaction.deleteMany({ userId: new Types.ObjectId(userId) });
+
+    // Reset budgets to zero spent
+    await Budget.updateMany(
+      { userId: new Types.ObjectId(userId) },
+      { $set: { spentAmount: 0, isExceeded: false, isNearLimit: false } }
+    );
+
+    res.json({
+      success: true,
+      message: 'All transaction history and budgets reset. Starting 100% fresh.'
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message || 'Failed to purge data.' });
   }
 };

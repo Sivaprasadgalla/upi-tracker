@@ -138,13 +138,13 @@ export class UpiParserService {
     }
 
     const lower = text.toLowerCase();
-    if (lower.includes('google pay') || lower.includes('gpay')) return 'GPAY';
-    if (lower.includes('phonepe')) return 'PHONEPE';
-    if (lower.includes('paytm')) return 'PAYTM';
-    if (lower.includes('cred')) return 'CRED';
-    if (lower.includes('amazon pay') || lower.includes('amazonpay')) return 'AMAZON_PAY';
-    if (lower.includes('bhim')) return 'BHIM';
-    if (lower.includes('hdfc') || lower.includes('sbi') || lower.includes('icici') || lower.includes('axis') || lower.includes('kotak')) {
+    if (lower.includes('google pay') || lower.includes('gpay') || /@(okaxis|okhdfcbank|okicici|oksbi)\b/i.test(text)) return 'GPAY';
+    if (lower.includes('phonepe') || /@(ybl|ibl|axl)\b/i.test(text)) return 'PHONEPE';
+    if (lower.includes('paytm') || /@(paytm|ptaxis|pthdfc)\b/i.test(text)) return 'PAYTM';
+    if (/\bcred\b/i.test(text) || /@cred\b/i.test(text)) return 'CRED';
+    if (lower.includes('amazon pay') || lower.includes('amazonpay') || /@apl\b/i.test(text)) return 'AMAZON_PAY';
+    if (lower.includes('bhim') || /@upi\b/i.test(text)) return 'BHIM';
+    if (lower.includes('hdfc') || lower.includes('sbi') || lower.includes('icici') || lower.includes('axis') || lower.includes('kotak') || lower.includes('pnb')) {
       return 'BANK_SMS';
     }
 
@@ -181,15 +181,28 @@ export class UpiParserService {
    */
   private static extractType(text: string): TransactionType {
     const lower = text.toLowerCase();
+
+    // Check account-specific debit indicators first
+    // E.g.: "ICICI Bank Acct XX305 debited for Rs 1.00 ... ASHOK CHEEMALA credited" -> DEBIT
+    if (
+      /(?:a\/c|acct|account|card)\s*(?:[x*]+[0-9]+|[0-9]+)?\s*(?:is\s+)?debited/i.test(text) ||
+      /(?:debited\s+(?:for|by|with)?\s*(?:rs\.?|inr|₹)?)/i.test(text) ||
+      /(?:paid\s+(?:rs\.?|inr|₹)?\s*[0-9]+)/i.test(text) ||
+      /(?:sent\s+(?:rs\.?|inr|₹)?\s*[0-9]+)/i.test(text)
+    ) {
+      return 'DEBIT';
+    }
+
     if (
       lower.includes('received') ||
-      lower.includes('credited') ||
+      /(?:a\/c|acct|account|card)\s*(?:[x*]+[0-9]+|[0-9]+)?\s*(?:is\s+)?credited/i.test(text) ||
       lower.includes('deposit') ||
       lower.includes('refund') ||
       lower.includes('cashback')
     ) {
       return 'CREDIT';
     }
+
     return 'DEBIT';
   }
 
@@ -205,6 +218,7 @@ export class UpiParserService {
 
     if (type === 'DEBIT') {
       const debitPatterns = [
+        /(?:;\s*|to\s+)([A-Za-z0-9\s.&'-]{2,35}?)\s+credited/i,
         /(?:paid to|sent to|transfer to|transferred to|towards|to)\s+([A-Za-z0-9\s.&'-]{2,35}?)(?=\s+(?:on|using|via|successfully|ref|upi|from|\*\*|\.|$))/i,
         /(?:debited for|for)\s+([A-Za-z0-9\s.&'-]{2,35}?)(?=\s+(?:order|on|using|via|successfully|ref|upi|\.|$))/i,
         /(?:info:\s*upi\/)([A-Za-z0-9\s.&'-]{2,30})/i,
@@ -251,7 +265,7 @@ export class UpiParserService {
    */
   private static extractRefNumber(text: string): string | undefined {
     const refPatterns = [
-      /(?:ref(?:\s+no\.?|erence)?|utr|rrn|txn\s+id)[:\s#]*([0-9]{8,14})/i,
+      /(?:ref(?:\s+no\.?|erence)?|utr|rrn|txn\s+id|upi)[:\s#]*([0-9]{8,14})/i,
       /(?:upi\/[A-Za-z0-9]+\/)([0-9]{8,14})/i
     ];
 

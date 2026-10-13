@@ -49,6 +49,14 @@ const UPI_APPS: { label: string; value: AppSource }[] = [
   { label: 'Manual Entry', value: 'MANUAL' }
 ];
 
+const DATE_PRESETS: { id: 'today' | 'yesterday' | '2days' | '3days' | 'custom'; label: string }[] = [
+  { id: 'today', label: 'Today' },
+  { id: 'yesterday', label: 'Yesterday' },
+  { id: '2days', label: '2 Days Ago' },
+  { id: '3days', label: '3 Days Ago' },
+  { id: 'custom', label: 'Calendar' }
+];
+
 export const ManualAddTransactionModal: React.FC<Props> = ({
   visible,
   onClose,
@@ -66,7 +74,7 @@ export const ManualAddTransactionModal: React.FC<Props> = ({
   const [selectedCategory, setSelectedCategory] = useState<CategoryType>('Food & Dining');
   const [note, setNote] = useState<string>('');
   const [transactionDate, setTransactionDate] = useState<Date>(new Date());
-  const [datePreset, setDatePreset] = useState<'today' | 'yesterday' | '2days' | 'custom'>('today');
+  const [datePreset, setDatePreset] = useState<'today' | 'yesterday' | '2days' | '3days' | 'custom'>('today');
   const [customDateString, setCustomDateString] = useState<string>('');
   const [showCalendarPicker, setShowCalendarPicker] = useState<boolean>(false);
 
@@ -96,16 +104,20 @@ export const ManualAddTransactionModal: React.FC<Props> = ({
     }
   }, [transactionToEdit, visible]);
 
-  const quickAmounts = [100, 200, 500, 1000, 2000];
+  const quickAmounts = [100, 200, 500, 1000];
 
   const handleQuickAdd = (val: number) => {
-    Haptics.selectionAsync();
+    try {
+      Haptics.selectionAsync();
+    } catch {}
     const current = parseFloat(amount) || 0;
     setAmount(String(current + val));
   };
 
-  const handleDatePreset = (preset: 'today' | 'yesterday' | '2days' | 'custom') => {
-    Haptics.selectionAsync();
+  const handleDatePreset = (preset: 'today' | 'yesterday' | '2days' | '3days' | 'custom') => {
+    try {
+      Haptics.selectionAsync();
+    } catch {}
     setDatePreset(preset);
     const now = new Date();
 
@@ -122,6 +134,11 @@ export const ManualAddTransactionModal: React.FC<Props> = ({
       const d2 = new Date(now.getTime() - 48 * 60 * 60 * 1000);
       setTransactionDate(d2);
       setCustomDateString(d2.toISOString().split('T')[0]);
+      setShowCalendarPicker(false);
+    } else if (preset === '3days') {
+      const d3 = new Date(now.getTime() - 72 * 60 * 60 * 1000);
+      setTransactionDate(d3);
+      setCustomDateString(d3.toISOString().split('T')[0]);
       setShowCalendarPicker(false);
     } else if (preset === 'custom') {
       setShowCalendarPicker((prev) => !prev);
@@ -140,9 +157,9 @@ export const ManualAddTransactionModal: React.FC<Props> = ({
       return;
     }
 
-    if (Platform.OS === 'ios') {
+    try {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }
+    } catch {}
 
     const payload = {
       amount: numAmount,
@@ -249,87 +266,37 @@ export const ManualAddTransactionModal: React.FC<Props> = ({
             {/* Date Selection Section */}
             <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>TRANSACTION DATE</Text>
             <View style={[styles.insetGroupCard, { backgroundColor: isDark ? '#2C2C2E' : '#F2F2F7', borderColor: theme.cardBorder }]}>
-              <View style={styles.datePresetsRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.dateChip,
-                    { backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF' },
-                    datePreset === 'today' && { backgroundColor: theme.primary }
-                  ]}
-                  onPress={() => handleDatePreset('today')}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.dateChipText,
-                      { color: theme.textSecondary },
-                      datePreset === 'today' && styles.dateChipTextActive
-                    ]}
-                  >
-                    Today
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.dateChip,
-                    { backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF' },
-                    datePreset === 'yesterday' && { backgroundColor: theme.primary }
-                  ]}
-                  onPress={() => handleDatePreset('yesterday')}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.dateChipText,
-                      { color: theme.textSecondary },
-                      datePreset === 'yesterday' && styles.dateChipTextActive
-                    ]}
-                  >
-                    Yesterday
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.dateChip,
-                    { backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF' },
-                    datePreset === '2days' && { backgroundColor: theme.primary }
-                  ]}
-                  onPress={() => handleDatePreset('2days')}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.dateChipText,
-                      { color: theme.textSecondary },
-                      datePreset === '2days' && styles.dateChipTextActive
-                    ]}
-                  >
-                    2 Days Ago
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.dateChip,
-                    { backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF' },
-                    datePreset === 'custom' && { backgroundColor: theme.primary }
-                  ]}
-                  onPress={() => handleDatePreset('custom')}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.dateChipText,
-                      { color: theme.textSecondary },
-                      datePreset === 'custom' && styles.dateChipTextActive
-                    ]}
-                  >
-                    Calendar
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.datePresetsScroll}
+              >
+                {DATE_PRESETS.map((preset) => {
+                  const isSelected = datePreset === preset.id;
+                  return (
+                    <TouchableOpacity
+                      key={preset.id}
+                      style={[
+                        styles.dateChip,
+                        { backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF' },
+                        isSelected && { backgroundColor: theme.primary }
+                      ]}
+                      onPress={() => handleDatePreset(preset.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.dateChipText,
+                          { color: theme.textSecondary },
+                          isSelected && styles.dateChipTextActive
+                        ]}
+                      >
+                        {preset.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
 
               {datePreset === 'custom' && showCalendarPicker && (
                 <>
@@ -587,15 +554,19 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 0.5
   },
-  datePresetsRow: {
+  datePresetsScroll: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     flexDirection: 'row',
-    padding: 10,
-    justifyContent: 'space-between'
+    alignItems: 'center'
   },
   dateChip: {
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginRight: 10,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   dateChipText: {
     fontSize: 14,

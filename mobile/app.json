@@ -2,10 +2,11 @@
   "expo": {
     "name": "UPI Tracker",
     "slug": "upi-tracker",
+    "owner": "sivademo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -17,9 +18,14 @@
       "infoPlist": {
         "UIBackgroundModes": [
           "remote-notification",
+          "fetch",
+          "remote-notification",
           "fetch"
         ],
         "NSFaceIDUsageDescription": "UPI Tracker requires Face ID to securely authenticate and protect your financial transactions."
+      },
+      "runtimeVersion": {
+        "policy": "appVersion"
       }
     },
     "android": {
@@ -37,8 +43,18 @@
         "USE_BIOMETRIC",
         "USE_FINGERPRINT",
         "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "POST_NOTIFICATIONS",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT"
-      ]
+      ],
+      "runtimeVersion": "1.0.0"
     },
     "scheme": "upitracker",
     "web": {
@@ -58,6 +74,9 @@
       "eas": {
         "projectId": "4f7a21ce-d94d-4d36-9731-973501c971ec"
       }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/4f7a21ce-d94d-4d36-9731-973501c971ec"
     }
   }
 }

@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { ITransaction } from '../../types/index';
 import { Icon, IconName } from './Icon';
 import { useTheme } from '../../theme/ThemeContext';
@@ -46,7 +47,10 @@ export const TransactionCard: React.FC<Props> = ({
   const { theme } = useTheme();
   const isDebit = transaction.type === 'DEBIT';
   const config = CATEGORY_CONFIG[transaction.category] || CATEGORY_CONFIG.Other;
-  const appLabel = APP_LABELS[transaction.appSource] || transaction.appSource;
+  const appLabel =
+    (transaction.appSource === 'IOS_SHORTCUT' || transaction.appSource === 'BANK_SMS') && transaction.bankName
+      ? `${transaction.bankName}${transaction.accountLast4 ? ` • ${transaction.accountLast4}` : ''}`
+      : APP_LABELS[transaction.appSource] || transaction.appSource;
 
   const formattedDate = new Date(transaction.transactionDate).toLocaleDateString('en-IN', {
     month: 'short',
@@ -55,10 +59,17 @@ export const TransactionCard: React.FC<Props> = ({
     minute: '2-digit'
   });
 
+  const handlePress = () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+    if (onPress) onPress();
+  };
+
   return (
     <TouchableOpacity
-      activeOpacity={0.7}
-      onPress={onPress}
+      activeOpacity={0.65}
+      onPress={handlePress}
       style={styles.touchable}
     >
       <View style={styles.rowContainer}>

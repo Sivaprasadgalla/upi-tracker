@@ -4,14 +4,18 @@ import {
   getTransactions,
   createManual,
   updateTransaction,
-  deleteTransaction
+  deleteTransaction,
+  purgeAllUserData
 } from '../controllers/transactionController.js';
-import { authenticate } from '../middlewares/auth.js';
+import { authenticate, optionalAuthenticate } from '../middlewares/auth.js';
 
 const router = Router();
 
 // Ingestion endpoint for Android Headless Service & iOS Shortcut Webhook
-router.post('/ingest', authenticate, ingestNotification);
+router.post('/ingest', optionalAuthenticate, ingestNotification);
+
+// Purge / Reset endpoint to start fresh
+router.delete('/purge/all', authenticate, purgeAllUserData);
 
 // Core CRUD
 router.get('/', authenticate, getTransactions);

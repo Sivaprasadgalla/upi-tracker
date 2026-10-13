@@ -17,7 +17,9 @@ export const IOSSegmentedControl: React.FC<Props> = ({
   const { theme, isDark } = useTheme();
 
   const handlePress = (index: number) => {
-    Haptics.selectionAsync();
+    try {
+      Haptics.selectionAsync();
+    } catch {}
     onChange(index);
   };
 

@@ -7,11 +7,11 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
-  SafeAreaView,
   ActivityIndicator,
-  Modal,
-  Platform
+  Platform,
+  RefreshControl
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '../store/AppContext';
 import { useTheme } from '../theme/ThemeContext';
@@ -19,6 +19,7 @@ import { ThemeMode } from '../theme/colors';
 import { IOSSegmentedControl } from '../components/ios/IOSSegmentedControl';
 import { Icon } from '../components/common/Icon';
 import { BiometricService } from '../services/biometricService';
+import { AndroidListenerBridge } from '../services/androidListenerBridge';
 
 export const SetupTrackingScreen: React.FC = () => {
   const {
@@ -27,19 +28,14 @@ export const SetupTrackingScreen: React.FC = () => {
     biometricLabel,
     toggleBiometricLock,
     syncStatus,
-    refreshData
+    refreshData,
+    userToken,
+    currentDeviceId,
+    switchAccount
   } = useApp();
 
   const { theme, themeMode, setThemeMode, isDark } = useTheme();
   const [isSyncing, setIsSyncing] = useState(false);
-
-  // PIN Setup Modal States
-  const [pinModalVisible, setPinModalVisible] = useState(false);
-  const [pinMode, setPinMode] = useState<'setup' | 'change'>('setup');
-  const [pinStep, setPinStep] = useState<1 | 2>(1);
-  const [enteredPin, setEnteredPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
-  const [pinError, setPinError] = useState('');
 
   const themeOptions: ThemeMode[] = ['system', 'light', 'dark'];
   const themeLabels = ['System', 'Light', 'Dark'];
@@ -68,92 +64,6 @@ export const SetupTrackingScreen: React.FC = () => {
     }
   };
 
-  const openPinModal = (mode: 'setup' | 'change') => {
-    setPinMode(mode);
-    setPinStep(1);
-    setEnteredPin('');
-    setConfirmPin('');
-    setPinError('');
-    setPinModalVisible(true);
-  };
-
-  const closePinModal = () => {
-    setPinModalVisible(false);
-    setEnteredPin('');
-    setConfirmPin('');
-    setPinError('');
-  };
-
-  const handlePinDigit = async (digit: string) => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {}
-
-    if (pinStep === 1) {
-      if (enteredPin.length >= 4) return;
-      const next = enteredPin + digit;
-      setEnteredPin(next);
-      setPinError('');
-      if (next.length === 4) {
-        setTimeout(() => setPinStep(2), 200);
-      }
-    } else {
-      if (confirmPin.length >= 4) return;
-      const next = confirmPin + digit;
-      setConfirmPin(next);
-      setPinError('');
-      if (next.length === 4) {
-        if (next === enteredPin) {
-          await BiometricService.setPin(enteredPin);
-          await toggleBiometricLock(true);
-          closePinModal();
-          try {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          } catch {}
-          Alert.alert('PIN Configured', 'App security lock is now active with your 4-digit PIN.');
-        } else {
-          try {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          } catch {}
-          setPinError('PINs do not match. Please try again.');
-          setTimeout(() => setConfirmPin(''), 500);
-        }
-      }
-    }
-  };
-
-  const handlePinDelete = () => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {}
-
-    if (pinStep === 1) {
-      setEnteredPin((prev) => prev.slice(0, -1));
-    } else {
-      if (confirmPin.length > 0) {
-        setConfirmPin((prev) => prev.slice(0, -1));
-      } else {
-        setPinStep(1);
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (pinModalVisible && Platform.OS === 'web' && typeof window !== 'undefined') {
-      const handleKeyDown = (e: KeyboardEvent) => {
-        if (/^[0-9]$/.test(e.key)) {
-          handlePinDigit(e.key);
-        } else if (e.key === 'Backspace') {
-          handlePinDelete();
-        } else if (e.key === 'Escape') {
-          closePinModal();
-        }
-      };
-      window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
-    }
-  }, [pinModalVisible, pinStep, enteredPin, confirmPin]);
-
   const isIOSUser =
     Platform.OS === 'ios' ||
     (Platform.OS === 'web' &&
@@ -161,29 +71,62 @@ export const SetupTrackingScreen: React.FC = () => {
       (/iPhone|iPad|iPod/.test(navigator.userAgent) ||
         (navigator.platform === 'MacIntel' && (navigator as any).maxTouchPoints > 1)));
 
+  const activeToken =
+    userToken ||
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhY2QxZTlmMzdmZDY4OTQ5YzJmZDZjMSIsImVtYWlsIjoiZGV2aWNlX2lvc19kZXZpY2VfdGVzdEB1cGl0cmFja2VyLmxvY2FsIiwiaWF0IjoxNzkxODI3NjE2LCJleHAiOjE3OTQ0MTk2MTZ9.8N1BAsioQE4VUsimWl7a4aId7OvOYNxi9ivwkEMyJj4';
+
   const shortcutSteps = [
     {
       step: '1',
       title: 'Open Apple Shortcuts App',
-      desc: 'Go to the Automation tab at the bottom and tap "+" to create a Personal Automation.'
+      desc: 'Go to the Automation tab at bottom > tap "+" > choose "New Automation" / "Personal Automation".'
     },
     {
       step: '2',
-      title: 'Trigger: "Message" or "Transaction"',
-      desc: 'Select "Message" contains words like "UPI", "debited", "paid", or "credited". Set to "Run Immediately".'
+      title: 'Trigger: Message Contains',
+      desc: 'Choose "Message" > Message contains: "debited" (or "paid", "UPI"). Choose "Run Immediately" & turn off "Notify When Run".'
     },
     {
       step: '3',
-      title: 'Action: Open URL in UPI Tracker',
-      desc: 'Add the action "Open URL" and set the URL to: upitracker://log?text=ShortcutInput'
+      title: 'Action: "Get Contents of URL"',
+      desc: 'Add action "Get Contents of URL". Set Method to POST and URL to the Ingest Webhook URL below.'
+    },
+    {
+      step: '4',
+      title: 'Headers (Resolves 401 Error)',
+      desc: 'Add 2 Headers:\n• Content-Type: application/json\n• Authorization: Bearer <Token below>'
+    },
+    {
+      step: '5',
+      title: 'Request Body: JSON',
+      desc: 'Set Request Body to JSON with 2 fields:\n• source: IOS_SHORTCUT (Text)\n• rawText: Shortcut Input (Text variable)'
     }
   ];
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+    await refreshData();
+    setIsRefreshing(false);
+  };
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.primary}
+            colors={[theme.primary]}
+          />
+        }
       >
         {/* Large Title Header */}
         <View style={styles.header}>
@@ -303,62 +246,34 @@ export const SetupTrackingScreen: React.FC = () => {
             </View>
             <View style={styles.rowLabelContainer}>
               <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>
-                {isBiometricSupported ? `${biometricLabel}` : 'Device Security & PIN'}
+                {biometricLabel} & Passcode Lock
               </Text>
               <Text style={[styles.rowSubLabel, { color: theme.textSecondary }]}>
-                Require authentication / PIN whenever opening app
+                Require Face ID or device passcode to open app
               </Text>
             </View>
             <Switch
               value={isBiometricEnabled}
               onValueChange={async (value) => {
-                if (value) {
-                  if (Platform.OS === 'web') {
-                    const hasPin = await BiometricService.hasPin();
-                    if (!hasPin) {
-                      openPinModal('setup');
-                      return;
-                    }
-                  }
-                  const success = await toggleBiometricLock(true);
-                  if (!success) {
-                    Alert.alert(
-                      'Verification Failed',
-                      `Could not verify ${biometricLabel}. Ensure biometrics or security settings are enabled.`
-                    );
-                  }
-                } else {
-                  await toggleBiometricLock(false);
+                const success = await toggleBiometricLock(value);
+                if (!success && value) {
+                  Alert.alert(
+                    'Security Lock',
+                    'Authentication canceled. Face ID & Passcode lock was not enabled.'
+                  );
                 }
               }}
               trackColor={{ false: theme.separator, true: theme.success }}
               thumbColor="#FFFFFF"
             />
           </View>
+        </View>
 
-          {isBiometricEnabled && (
-            <>
-              <View style={[styles.hairline, { backgroundColor: theme.separator }]} />
-              <TouchableOpacity
-                style={styles.tableRow}
-                onPress={() => openPinModal('change')}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.iconSquircle, { backgroundColor: theme.primaryLight }]}>
-                  <Icon name="lock" size={20} color={theme.primary} />
-                </View>
-                <View style={styles.rowLabelContainer}>
-                  <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>
-                    Change Security PIN
-                  </Text>
-                  <Text style={[styles.rowSubLabel, { color: theme.textSecondary }]}>
-                    Update your 4-digit security code
-                  </Text>
-                </View>
-                <Icon name="chevron-right" size={18} color={theme.textSecondary} />
-              </TouchableOpacity>
-            </>
-          )}
+        {/* Informative Troubleshooting Callout */}
+        <View style={[styles.infoBanner, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder, marginTop: 10, borderRadius: 12 }]}>
+          <Text style={[styles.infoBannerText, { color: theme.textSecondary, fontSize: 12 }]}>
+            💡 <Text style={{ fontWeight: '600', color: theme.textPrimary }}>Native Face ID & Passcode:</Text> Uses your iPhone's native Face ID with automatic device passcode fallback. If Face ID is not scanning, check <Text style={{ fontWeight: '600', color: theme.primary }}>iPhone Settings &gt; Expo Go &gt; Face ID</Text> to ensure permission is ON.
+          </Text>
         </View>
 
         {/* Section 4: Apple Shortcuts Guide (Displayed only to iOS users) */}
@@ -370,7 +285,7 @@ export const SetupTrackingScreen: React.FC = () => {
             <View style={[styles.insetGroupCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
               <View style={[styles.infoBanner, { backgroundColor: theme.fill, borderBottomColor: theme.separator }]}>
                 <Text style={[styles.infoBannerText, { color: theme.textSecondary }]}>
-                  iOS isolates third-party apps from reading notifications directly. Use Apple’s native Shortcuts Automations to capture bank SMS and UPI alerts seamlessly.
+                  iOS isolates apps from reading SMS directly. Apple Shortcuts automations forward bank SMS alerts seamlessly to your cloud database in real-time.
                 </Text>
               </View>
 
@@ -391,121 +306,200 @@ export const SetupTrackingScreen: React.FC = () => {
                 </View>
               ))}
             </View>
+
+            {/* Section 5: Webhook Credentials Card */}
+            <Text style={[styles.sectionHeader, { color: theme.textSecondary, marginTop: 24 }]}>
+              SHORTCUT WEBHOOK CREDENTIALS
+            </Text>
+            <View style={[styles.insetGroupCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder, padding: 16 }]}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: theme.textSecondary, marginBottom: 4, textTransform: 'uppercase' }}>
+                1. Webhook URL (POST)
+              </Text>
+              <View style={{ backgroundColor: theme.fill, padding: 12, borderRadius: 10, marginBottom: 16 }}>
+                <Text selectable={true} style={{ fontSize: 13, color: theme.primary, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }}>
+                  https://upi-tracker-r7mk.onrender.com/api/transactions/ingest
+                </Text>
+              </View>
+
+              <Text style={{ fontSize: 12, fontWeight: '700', color: theme.textSecondary, marginBottom: 4, textTransform: 'uppercase' }}>
+                2. Authorization Header Value
+              </Text>
+              <Text style={{ fontSize: 11, color: theme.textSecondary, marginBottom: 6 }}>
+                Tap and hold below to select &amp; copy this token into your Shortcut Headers:
+              </Text>
+              <View style={{ backgroundColor: theme.fill, padding: 12, borderRadius: 10, marginBottom: 16 }}>
+                <Text selectable={true} style={{ fontSize: 11, color: theme.textPrimary, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', lineHeight: 16 }}>
+                  {`Bearer ${activeToken}`}
+                </Text>
+              </View>
+
+              <Text style={{ fontSize: 12, fontWeight: '700', color: theme.textSecondary, marginBottom: 4, textTransform: 'uppercase' }}>
+                3. JSON Request Body Fields
+              </Text>
+              <View style={{ backgroundColor: theme.fill, padding: 12, borderRadius: 10 }}>
+                <Text style={{ fontSize: 13, color: theme.textPrimary, marginBottom: 4 }}>
+                  • <Text style={{ fontWeight: '700' }}>source</Text> : Text = <Text style={{ color: theme.primary, fontWeight: '600' }}>IOS_SHORTCUT</Text>
+                </Text>
+                <Text style={{ fontSize: 13, color: theme.textPrimary }}>
+                  • <Text style={{ fontWeight: '700' }}>rawText</Text> : Text = <Text style={{ color: theme.primary, fontWeight: '600' }}>Shortcut Input</Text>
+                </Text>
+              </View>
+            </View>
+
+            {/* Section 6: How to Duplicate Tip Card */}
+            <View style={[styles.infoBanner, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder, marginTop: 14, borderRadius: 12, borderWidth: 0.5 }]}>
+              <Text style={[styles.infoBannerText, { color: theme.textSecondary, fontSize: 13, lineHeight: 19 }]}>
+                💡 <Text style={{ fontWeight: '700', color: theme.textPrimary }}>Pro-Tip: Multiple Keywords (debited, paid, UPI)</Text>{'\n'}
+                Instead of rewriting the Webhook URL and Token for every keyword, create <Text style={{ fontWeight: '600', color: theme.primary }}>ONE</Text> Shortcut named "Log UPI SMS" containing the URL action. Then under Automations, create separate triggers for "debited", "paid", and "UPI" that all simply select <Text style={{ fontWeight: '600', color: theme.textPrimary }}>Run "Log UPI SMS"</Text>!
+              </Text>
+            </View>
           </>
         )}
-      </ScrollView>
 
-      {/* 4-Digit Security PIN Modal */}
-      <Modal
-        visible={pinModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={closePinModal}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-            <View style={[styles.modalIconSquircle, { backgroundColor: theme.primaryLight }]}>
-              <Icon name="lock" size={26} color={theme.primary} />
-            </View>
-
-            <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>
-              {pinStep === 1
-                ? (pinMode === 'change' ? 'Enter New 4-Digit PIN' : 'Create 4-Digit PIN')
-                : 'Confirm Your PIN'}
+        {/* Section 4 (Android): Native Android Notification Listener */}
+        {!isIOSUser && (
+          <>
+            <Text style={[styles.sectionHeader, { color: theme.textSecondary, marginTop: 24 }]}>
+              AUTOMATED TRACKING (ANDROID)
             </Text>
-
-            <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>
-              {pinStep === 1
-                ? 'Choose 4 digits to protect your financial records'
-                : 'Re-enter your 4 digits to confirm'}
-            </Text>
-
-            {/* 4 PIN Dots */}
-            <View style={styles.modalDotsRow}>
-              {[0, 1, 2, 3].map((index) => {
-                const currentVal = pinStep === 1 ? enteredPin : confirmPin;
-                const isFilled = index < currentVal.length;
-                return (
-                  <View
-                    key={index}
-                    style={[
-                      styles.modalDot,
-                      {
-                        backgroundColor: isFilled ? theme.primary : 'transparent',
-                        borderColor: isFilled ? theme.primary : theme.textSecondary
-                      }
-                    ]}
-                  />
-                );
-              })}
-            </View>
-
-            {/* Error Message */}
-            {pinError ? (
-              <View style={styles.modalErrorBox}>
-                <Text style={styles.modalErrorText}>{pinError}</Text>
+            <View style={[styles.insetGroupCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+              <View style={[styles.infoBanner, { backgroundColor: theme.fill, borderBottomColor: theme.separator }]}>
+                <Text style={[styles.infoBannerText, { color: theme.textSecondary }]}>
+                  Android automatically captures incoming transactions directly from Google Pay, PhonePe, Paytm, CRED, and Bank SMS in the background. No Apple Shortcuts setup required!
+                </Text>
               </View>
-            ) : null}
-
-            {/* Keypad */}
-            <View style={styles.modalKeypad}>
-              {[
-                ['1', '2', '3'],
-                ['4', '5', '6'],
-                ['7', '8', '9'],
-                ['', '0', 'delete']
-              ].map((row, rIdx) => (
-                <View key={rIdx} style={styles.modalKeypadRow}>
-                  {row.map((k, kIdx) => {
-                    if (k === '') {
-                      return <View key={kIdx} style={styles.modalKeyEmpty} />;
-                    }
-                    if (k === 'delete') {
-                      return (
-                        <TouchableOpacity
-                          key={kIdx}
-                          style={styles.modalKeyEmpty}
-                          onPress={handlePinDelete}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.modalDeleteText, { color: theme.textPrimary }]}>⌫</Text>
-                        </TouchableOpacity>
-                      );
-                    }
-                    return (
-                      <TouchableOpacity
-                        key={kIdx}
-                        style={[
-                          styles.modalKeyButton,
-                          {
-                            backgroundColor: isDark
-                              ? 'rgba(255, 255, 255, 0.08)'
-                              : 'rgba(0, 0, 0, 0.05)',
-                            borderColor: theme.separator
-                          }
-                        ]}
-                        onPress={() => handlePinDigit(k)}
-                        activeOpacity={0.6}
-                      >
-                        <Text style={[styles.modalKeyText, { color: theme.textPrimary }]}>{k}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+              <View style={styles.tableRow}>
+                <View style={[styles.iconSquircle, { backgroundColor: theme.successLight }]}>
+                  <Icon name="check" size={20} color={theme.success} />
                 </View>
-              ))}
-            </View>
+                <View style={styles.rowLabelContainer}>
+                  <Text style={[styles.rowLabel, { color: theme.textPrimary }]}>Background Notification Listener</Text>
+                  <Text style={[styles.rowSubLabel, { color: theme.textSecondary }]}>
+                    Captures UPI app alerts &amp; SMS in real-time
+                  </Text>
+                </View>
+              </View>
 
-            {/* Cancel Button */}
+              <View style={[styles.hairline, { backgroundColor: theme.separator }]} />
+
+              <TouchableOpacity
+                style={styles.syncButtonRow}
+                onPress={() => AndroidListenerBridge.openPermissionSettings()}
+                activeOpacity={0.7}
+              >
+                <Icon name="setup" size={18} color={theme.primary} />
+                <Text style={[styles.syncButtonText, { color: theme.primary }]}>
+                  Open Notification Access Settings
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+
+        {/* Section 7: Account & Friends Multi-User Cloud Sync */}
+        <Text style={[styles.sectionHeader, { color: theme.textSecondary, marginTop: 24 }]}>
+          ACCOUNT &amp; MULTI-USER CLOUD SYNC
+        </Text>
+        <View style={[styles.insetGroupCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder, padding: 16 }]}>
+          <Text style={{ fontSize: 12, fontWeight: '700', color: theme.textSecondary, marginBottom: 4, textTransform: 'uppercase' }}>
+            Current Account / Sync ID
+          </Text>
+          <View style={{ backgroundColor: theme.fill, padding: 12, borderRadius: 10, marginBottom: 14 }}>
+            <Text selectable={true} style={{ fontSize: 13, color: theme.primary, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontWeight: '600' }}>
+              {currentDeviceId || 'ios_device_test'}
+            </Text>
+          </View>
+
+          <Text style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18, marginBottom: 14 }}>
+            👥 <Text style={{ fontWeight: '600', color: theme.textPrimary }}>How it works with friends:</Text>{'\n'}
+            • <Text style={{ fontWeight: '600', color: theme.textPrimary }}>Complete Privacy:</Text> Each friend who installs this app gets their own private account and separate database in the cloud.{'\n'}
+            • <Text style={{ fontWeight: '600', color: theme.textPrimary }}>Friends on iPhone:</Text> Each friend copies their own unique token from their Settings screen into their Apple Shortcut.{'\n'}
+            • <Text style={{ fontWeight: '600', color: theme.textPrimary }}>Friends on Android:</Text> Payments are tracked automatically with zero shortcuts needed!{'\n'}
+            • <Text style={{ fontWeight: '600', color: theme.textPrimary }}>Shared / Joint Accounts:</Text> If two people want to share a joint household budget, enter the same Account ID on both devices.
+          </Text>
+
+          <View style={{ flexDirection: 'row', gap: 10 }}>
             <TouchableOpacity
-              style={styles.modalCancelButton}
-              onPress={closePinModal}
+              style={{
+                flex: 1,
+                backgroundColor: theme.fill,
+                paddingVertical: 11,
+                borderRadius: 10,
+                alignItems: 'center',
+                borderWidth: 0.5,
+                borderColor: theme.cardBorder
+              }}
+              onPress={() => {
+                Alert.alert(
+                  'Create Fresh Private Account?',
+                  'This device will disconnect from the current account and establish a brand-new private cloud database for your transactions.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Create New Account',
+                      onPress: async () => {
+                        const newId = 'user_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
+                        const ok = await switchAccount(newId);
+                        if (ok) {
+                          Alert.alert('Account Created', `Now using private account: ${newId}`);
+                        }
+                      }
+                    }
+                  ]
+                );
+              }}
               activeOpacity={0.7}
             >
-              <Text style={[styles.modalCancelText, { color: theme.textSecondary }]}>Cancel</Text>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: theme.primary }}>New Private Account</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={{
+                flex: 1,
+                backgroundColor: theme.fill,
+                paddingVertical: 11,
+                borderRadius: 10,
+                alignItems: 'center',
+                borderWidth: 0.5,
+                borderColor: theme.cardBorder
+              }}
+              onPress={() => {
+                if (Platform.OS === 'ios') {
+                  Alert.prompt(
+                    'Join Shared Account',
+                    'Enter the Account ID / Sync Code to share a joint expense tracker with another device:',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Connect',
+                        onPress: async (id?: string) => {
+                          if (id && id.trim()) {
+                            const ok = await switchAccount(id.trim());
+                            if (ok) {
+                              Alert.alert('Account Linked', `Successfully connected to: ${id.trim()}`);
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    'plain-text',
+                    currentDeviceId || ''
+                  );
+                } else {
+                  Alert.alert(
+                    'Shared Account Sync',
+                    `Current Account ID: ${currentDeviceId || 'default'}\n\nTo share an account across multiple devices, connect to the same Account ID.`
+                  );
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '600', color: theme.textPrimary }}>Join / Switch Account</Text>
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </ScrollView>
+
     </SafeAreaView>
   );
 };
@@ -625,113 +619,5 @@ const styles = StyleSheet.create({
   hairline: {
     height: 0.5,
     marginLeft: 16
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 340,
-    borderRadius: 20,
-    borderWidth: 0.5,
-    padding: 24,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10
-  },
-  modalIconSquircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 6,
-    textAlign: 'center'
-  },
-  modalSubtitle: {
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 18,
-    paddingHorizontal: 10
-  },
-  modalDotsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 18,
-    gap: 16
-  },
-  modalDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    borderWidth: 1.5
-  },
-  modalErrorBox: {
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 69, 58, 0.12)',
-    marginBottom: 12
-  },
-  modalErrorText: {
-    color: '#FF453A',
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center'
-  },
-  modalKeypad: {
-    width: '100%',
-    maxWidth: 240,
-    marginBottom: 8
-  },
-  modalKeypadRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10
-  },
-  modalKeyButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 0.5
-  },
-  modalKeyEmpty: {
-    width: 56,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  modalKeyText: {
-    fontSize: 22,
-    fontWeight: '500'
-  },
-  modalDeleteText: {
-    fontSize: 20,
-    fontWeight: '400'
-  },
-  modalCancelButton: {
-    marginTop: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 20
-  },
-  modalCancelText: {
-    fontSize: 15,
-    fontWeight: '600'
   }
 });

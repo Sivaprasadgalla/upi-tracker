@@ -1,6 +1,8 @@
-import React from 'react';
-import { TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import React, { useRef } from 'react';
+import { StyleSheet, Platform, Animated, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import { useTheme } from '../../theme/ThemeContext';
 import { Icon } from './Icon';
 
 interface Props {
@@ -8,40 +10,71 @@ interface Props {
 }
 
 export const FloatingAddButton: React.FC<Props> = ({ onPress }) => {
+  const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const isIOS = Platform.OS === 'ios';
+  const bottomOffset = (isIOS ? 68 : 72) + Math.max(insets.bottom, 12);
+
   const handlePress = () => {
-    if (Platform.OS === 'ios') {
+    try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
+    } catch {}
+
+    Animated.sequence([
+      Animated.timing(scaleAnim, {
+        toValue: 0.88,
+        duration: 70,
+        useNativeDriver: true
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 4,
+        tension: 160,
+        useNativeDriver: true
+      })
+    ]).start();
+
     onPress();
   };
 
   return (
-    <TouchableOpacity
-      style={styles.fab}
-      onPress={handlePress}
-      activeOpacity={0.8}
+    <Animated.View
+      style={[
+        styles.fabContainer,
+        {
+          bottom: bottomOffset,
+          transform: [{ scale: scaleAnim }]
+        }
+      ]}
     >
-      <Icon name="plus" size={24} color="#FFFFFF" />
-    </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.fab, { backgroundColor: theme.primary, shadowColor: theme.primary }]}
+        onPress={handlePress}
+        activeOpacity={0.85}
+      >
+        <Icon name="plus" size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+    </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
-  fab: {
+  fabContainer: {
     position: 'absolute',
-    bottom: 98, // Right above the 83pt bottom tab bar
     right: 20,
+    zIndex: 999
+  },
+  fab: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#0A84FF', // Cupertino System Blue
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#0A84FF',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.45,
+    shadowOpacity: 0.4,
     shadowRadius: 10,
-    elevation: 8,
-    zIndex: 999
+    elevation: 8
   }
 });

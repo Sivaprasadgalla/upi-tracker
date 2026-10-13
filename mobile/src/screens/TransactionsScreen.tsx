@@ -6,9 +6,10 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
-  Platform
+  Platform,
+  RefreshControl
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '../store/AppContext';
 import { useTheme } from '../theme/ThemeContext';
@@ -22,20 +23,21 @@ import { AppleCalendarPicker } from '../components/common/AppleCalendarPicker';
 import { Icon } from '../components/common/Icon';
 
 export const TransactionsScreen: React.FC = () => {
-  const { transactions, deleteTransaction } = useApp();
+  const { transactions, deleteTransaction, refreshData } = useApp();
   const { theme, isDark } = useTheme();
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedApp, setSelectedApp] = useState<AppSource | 'ALL'>('ALL');
   const [selectedTypeIndex, setSelectedTypeIndex] = useState<number>(0);
   const [selectedPeriodIndex, setSelectedPeriodIndex] = useState<number>(0);
 
   // Custom date range state
-  const now = new Date();
-  const [rangeStartDate, setRangeStartDate] = useState<Date>(
-    new Date(now.getFullYear(), now.getMonth(), 1)
-  );
-  const [rangeEndDate, setRangeEndDate] = useState<Date>(now);
+  const [rangeStartDate, setRangeStartDate] = useState<Date>(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
+  const [rangeEndDate, setRangeEndDate] = useState<Date>(() => new Date());
   const [showRangeCalendar, setShowRangeCalendar] = useState<boolean>(true);
 
   const [isManualModalVisible, setIsManualModalVisible] = useState(false);
@@ -53,7 +55,9 @@ export const TransactionsScreen: React.FC = () => {
     'PAYTM',
     'CRED',
     'AMAZON_PAY',
+    'BHIM',
     'BANK_SMS',
+    'IOS_SHORTCUT',
     'MANUAL'
   ];
 
@@ -64,11 +68,14 @@ export const TransactionsScreen: React.FC = () => {
     PAYTM: 'Paytm',
     CRED: 'CRED',
     AMAZON_PAY: 'Amazon Pay',
+    BHIM: 'BHIM UPI',
     BANK_SMS: 'Bank SMS',
+    IOS_SHORTCUT: 'Shortcuts',
     MANUAL: 'Manual'
   };
 
   const filteredTransactions = useMemo(() => {
+    const now = new Date();
     return transactions.filter((tx) => {
       const txTime = new Date(tx.transactionDate).getTime();
 
@@ -174,13 +181,30 @@ export const TransactionsScreen: React.FC = () => {
     year: 'numeric'
   })}`;
 
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+    await refreshData();
+    setIsRefreshing(false);
+  };
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.primary}
+            colors={[theme.primary]}
+          />
+        }
       >
         {/* Large Title Header */}
         <View style={styles.headerRow}>

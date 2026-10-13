@@ -4,9 +4,16 @@ import { Platform } from 'react-native';
 
 export type BiometricType = 'FACE_ID' | 'FINGERPRINT' | 'IRIS' | 'PIN' | 'NONE';
 
+export interface BiometricAuthResult {
+  success: boolean;
+  error?: string;
+  errorCode?: string;
+}
+
+const APP_LOCK_KEY = 'upi_tracker_app_lock_enabled';
 const BIOMETRIC_ENABLED_KEY = 'upi_tracker_biometric_enabled';
 const APP_PIN_KEY = 'upi_tracker_app_pin';
-const DEFAULT_FALLBACK_PIN = '1234';
+export const DEFAULT_FALLBACK_PIN = '1234';
 
 export class BiometricService {
   /**
@@ -14,7 +21,7 @@ export class BiometricService {
    */
   public static async isHardwareAvailable(): Promise<boolean> {
     if (Platform.OS === 'web') {
-      return true; // Web always supports App Security PIN & WebAuthn
+      return false;
     }
     try {
       return await LocalAuthentication.hasHardwareAsync();
@@ -24,11 +31,11 @@ export class BiometricService {
   }
 
   /**
-   * Check if user has enrolled biometrics or has PIN capability
+   * Check if user has enrolled biometrics in device settings
    */
   public static async isEnrolled(): Promise<boolean> {
     if (Platform.OS === 'web') {
-      return true;
+      return false;
     }
     try {
       return await LocalAuthentication.isEnrolledAsync();
@@ -42,9 +49,6 @@ export class BiometricService {
    */
   public static async getBiometricType(): Promise<BiometricType> {
     if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && (window as any).PublicKeyCredential) {
-        return 'FACE_ID';
-      }
       return 'PIN';
     }
     try {
@@ -70,7 +74,7 @@ export class BiometricService {
    */
   public static async getBiometricLabel(): Promise<string> {
     if (Platform.OS === 'web') {
-      return 'Device Security & PIN';
+      return 'Device Passcode';
     }
     const type = await this.getBiometricType();
     if (type === 'FACE_ID') {
@@ -79,136 +83,155 @@ export class BiometricService {
     if (type === 'FINGERPRINT') {
       return Platform.OS === 'ios' ? 'Touch ID' : 'Fingerprint';
     }
-    return 'Device Biometrics';
+    return 'Face ID & Passcode';
   }
 
   /**
-   * Retrieve saved 4-digit App PIN
-   */
-  public static async getPin(): Promise<string | null> {
-    try {
-      return await AsyncStorage.getItem(APP_PIN_KEY);
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Check if custom PIN has been configured
-   */
-  public static async hasPin(): Promise<boolean> {
-    const pin = await this.getPin();
-    return pin !== null && pin.length === 4;
-  }
-
-  /**
-   * Store or update 4-digit App PIN
-   */
-  public static async setPin(pin: string): Promise<boolean> {
-    try {
-      await AsyncStorage.setItem(APP_PIN_KEY, pin);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Verify entered PIN against stored PIN
-   */
-  public static async verifyPin(inputPin: string): Promise<boolean> {
-    try {
-      const stored = await AsyncStorage.getItem(APP_PIN_KEY);
-      if (!stored) {
-        // Fallback default PIN if none configured yet
-        return inputPin === DEFAULT_FALLBACK_PIN;
-      }
-      return stored === inputPin;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Reset PIN and disable security lock
-   */
-  public static async resetPin(): Promise<void> {
-    try {
-      await AsyncStorage.removeItem(APP_PIN_KEY);
-      await AsyncStorage.setItem(BIOMETRIC_ENABLED_KEY, 'false');
-    } catch (e) {
-      console.warn('Error resetting PIN:', e);
-    }
-  }
-
-  /**
-   * Prompt user with native Face ID / Fingerprint sheet or web verification.
+   * Prompt user with native Face ID / Touch ID sheet with seamless native device passcode fallback.
+   * This uses the single native Apple security prompt: Face ID scans first; if not recognized,
+   * the user enters their device passcode on the Apple sheet to unlock.
    */
   public static async authenticate(
-    promptReason?: string,
-    allowPasscodeFallback: boolean = false
-  ): Promise<{ success: boolean; error?: string }> {
+    promptReason: string = 'Unlock UPI Tracker'
+  ): Promise<BiometricAuthResult> {
     if (Platform.OS === 'web') {
-      // On web, authentication can proceed or fall back to PIN keypad
       return { success: true };
     }
 
     try {
       const isAvailable = await this.isHardwareAvailable();
-      const isEnrolled = await this.isEnrolled();
-
-      if (!isAvailable || !isEnrolled) {
+      if (!isAvailable) {
         return {
           success: false,
-          error: 'Biometric authentication is not configured on this device.'
+          error: 'Biometric / device authentication is not available on this device.',
+          errorCode: 'not_available'
         };
       }
 
+      // disableDeviceFallback: false allows native iOS device passcode fallback sheet.
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: promptReason || 'Unlock UPI Tracker with Face ID',
+        promptMessage: promptReason,
         cancelLabel: 'Cancel',
-        fallbackLabel: allowPasscodeFallback ? 'Use Passcode' : '',
-        disableDeviceFallback: !allowPasscodeFallback
+        fallbackLabel: 'Enter Passcode',
+        disableDeviceFallback: false
       });
 
       if (result.success) {
         return { success: true };
       } else {
-        return { success: false, error: result.error || 'Authentication canceled or failed.' };
+        const errorCode = result.error || 'unknown';
+        let friendlyMessage = 'Authentication canceled or failed.';
+        if (errorCode === 'user_cancel' || errorCode === 'system_cancel' || errorCode === 'app_cancel') {
+          friendlyMessage = 'Authentication canceled.';
+        } else if (errorCode === 'authentication_failed') {
+          friendlyMessage = 'Face ID not recognized.';
+        } else if (errorCode === 'lockout') {
+          friendlyMessage = 'Biometrics locked. Enter device passcode.';
+        } else if (errorCode === 'not_enrolled') {
+          friendlyMessage = 'Face ID is not enrolled in iPhone Settings.';
+        } else if (errorCode === 'not_available' || (errorCode as string) === 'missing_usage_description') {
+          friendlyMessage = 'Face ID permission needed in iPhone Settings > Expo Go.';
+        }
+
+        return {
+          success: false,
+          error: friendlyMessage,
+          errorCode
+        };
       }
     } catch (err: any) {
-      return { success: false, error: err.message || 'Biometric authentication error.' };
+      return {
+        success: false,
+        error: err.message || 'Authentication error.',
+        errorCode: 'error'
+      };
     }
   }
 
   /**
-   * Retrieve saved preference for whether user wants app lock enabled
+   * Check whether App Security Lock is enabled
    */
-  public static async isBiometricLockEnabled(): Promise<boolean> {
+  public static async isAppLockEnabled(): Promise<boolean> {
     try {
-      const value = await AsyncStorage.getItem(BIOMETRIC_ENABLED_KEY);
-      return value === 'true';
+      const lockVal = await AsyncStorage.getItem(APP_LOCK_KEY);
+      if (lockVal !== null) {
+        return lockVal === 'true';
+      }
+      const legacyVal = await AsyncStorage.getItem(BIOMETRIC_ENABLED_KEY);
+      if (legacyVal !== null) {
+        return legacyVal === 'true';
+      }
+      return false;
     } catch {
       return false;
     }
   }
 
   /**
-   * Toggle biometric lock preference
+   * Set App Security Lock preference
    */
-  public static async setBiometricLockEnabled(enabled: boolean): Promise<boolean> {
+  public static async setAppLockEnabled(enabled: boolean): Promise<boolean> {
     try {
-      if (enabled && Platform.OS !== 'web') {
-        // On native mobile, must successfully authenticate before enabling lock
-        const auth = await this.authenticate('Confirm Face ID to enable app lock', false);
-        if (!auth.success) {
-          return false;
-        }
-      }
+      await AsyncStorage.setItem(APP_LOCK_KEY, enabled ? 'true' : 'false');
       await AsyncStorage.setItem(BIOMETRIC_ENABLED_KEY, enabled ? 'true' : 'false');
       return true;
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Check whether Face ID / Biometrics is preferred for unlocking
+   */
+  public static async isBiometricEnabled(): Promise<boolean> {
+    return this.isAppLockEnabled();
+  }
+
+  /**
+   * Set Face ID / Biometrics preference
+   */
+  public static async setBiometricEnabled(enabled: boolean): Promise<boolean> {
+    return this.setAppLockEnabled(enabled);
+  }
+
+  /**
+   * Backwards-compatibility aliases
+   */
+  public static async isBiometricLockEnabled(): Promise<boolean> {
+    return this.isAppLockEnabled();
+  }
+
+  public static async setBiometricLockEnabled(enabled: boolean, skipAuth: boolean = false): Promise<boolean> {
+    return this.setAppLockEnabled(enabled);
+  }
+
+  public static async getPin(): Promise<string | null> {
+    return AsyncStorage.getItem(APP_PIN_KEY);
+  }
+
+  public static async hasCustomPin(): Promise<boolean> {
+    const pin = await this.getPin();
+    return pin !== null && pin.length === 4;
+  }
+
+  public static async hasPin(): Promise<boolean> {
+    return this.hasCustomPin();
+  }
+
+  public static async setPin(pin: string): Promise<boolean> {
+    await AsyncStorage.setItem(APP_PIN_KEY, pin);
+    await AsyncStorage.setItem(APP_LOCK_KEY, 'true');
+    return true;
+  }
+
+  public static async verifyPin(inputPin: string): Promise<boolean> {
+    const stored = await AsyncStorage.getItem(APP_PIN_KEY);
+    return (stored || DEFAULT_FALLBACK_PIN) === inputPin;
+  }
+
+  public static async resetPin(): Promise<void> {
+    await AsyncStorage.removeItem(APP_PIN_KEY);
+    await AsyncStorage.setItem(APP_LOCK_KEY, 'false');
+    await AsyncStorage.setItem(BIOMETRIC_ENABLED_KEY, 'false');
   }
 }

@@ -5,8 +5,9 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView
+  RefreshControl
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '../store/AppContext';
 import { useTheme } from '../theme/ThemeContext';
@@ -41,22 +42,24 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 export const AnalyticsScreen: React.FC = () => {
-  const { transactions } = useApp();
+  const { transactions, refreshData } = useApp();
   const { theme } = useTheme();
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedPeriodIndex, setSelectedPeriodIndex] = useState<number>(1); // Default to 'Month'
 
   // Custom date range state
-  const now = new Date();
-  const [rangeStartDate, setRangeStartDate] = useState<Date>(
-    new Date(now.getFullYear(), now.getMonth(), 1)
-  );
-  const [rangeEndDate, setRangeEndDate] = useState<Date>(now);
+  const [rangeStartDate, setRangeStartDate] = useState<Date>(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
+  const [rangeEndDate, setRangeEndDate] = useState<Date>(() => new Date());
   const [showRangeCalendar, setShowRangeCalendar] = useState<boolean>(true);
 
   const timeframeLabels = ['Week', 'Month', 'Year', 'All', 'Custom'];
   const timeframeValues = ['WEEKLY', 'MONTHLY', 'YEARLY', 'ALL_TIME', 'CUSTOM'];
 
   const filteredTransactions = useMemo(() => {
+    const now = new Date();
     const period = timeframeValues[selectedPeriodIndex];
 
     return transactions.filter((tx) => {
@@ -148,11 +151,28 @@ export const AnalyticsScreen: React.FC = () => {
     year: 'numeric'
   })}`;
 
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+    await refreshData();
+    setIsRefreshing(false);
+  };
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.primary}
+            colors={[theme.primary]}
+          />
+        }
       >
         {/* Large Title Header */}
         <View style={styles.header}>
@@ -180,7 +200,9 @@ export const AnalyticsScreen: React.FC = () => {
               <TouchableOpacity
                 style={[styles.toggleCalendarBtn, { backgroundColor: theme.primaryLight }]}
                 onPress={() => {
-                  Haptics.selectionAsync();
+                  try {
+                    Haptics.selectionAsync();
+                  } catch {}
                   setShowRangeCalendar((prev) => !prev);
                 }}
                 activeOpacity={0.7}
