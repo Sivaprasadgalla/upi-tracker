@@ -177,7 +177,7 @@ export const getTransactions = async (req: AuthRequest, res: Response): Promise<
 
     const [transactions, total] = await Promise.all([
       Transaction.find(query)
-        .sort({ transactionDate: -1, createdAt: -1 })
+        .sort({ transactionDate: -1, statementSerial: -1, createdAt: -1 })
         .skip(skip)
         .limit(Number(limit)),
       Transaction.countDocuments(query)
@@ -406,8 +406,8 @@ export const importStatement = async (req: AuthRequest, res: Response): Promise<
 
     for (const item of parsedItems) {
       // Deduplication check:
-      // 1. By bankRefNumber if available
-      // 2. Or by same amount, type, and date within +/- 36 hours (cross-timezone deduplication)
+      // 1. If bankRefNumber is available, match ONLY by bankRefNumber (never falsely skip separate same-day transactions)
+      // 2. If no bankRefNumber, fuzzy match by amount, type, merchantName, and +/- 24h window
       let isDuplicate = false;
       if (item.bankRefNumber) {
         const existingByRef = await Transaction.findOne({
@@ -425,37 +425,24 @@ export const importStatement = async (req: AuthRequest, res: Response): Promise<
             existingByRef.merchantName = item.merchantName;
             if (item.vpa && !existingByRef.vpa) existingByRef.vpa = item.vpa;
             if (item.bankName && !existingByRef.bankName) existingByRef.bankName = item.bankName;
+            if (item.statementSerial && !existingByRef.statementSerial) existingByRef.statementSerial = item.statementSerial;
             await existingByRef.save();
           }
         }
-      }
-
-      if (!isDuplicate) {
-        const windowStart = new Date(item.transactionDate.getTime() - 36 * 3600 * 1000);
-        const windowEnd = new Date(item.transactionDate.getTime() + 36 * 3600 * 1000);
+      } else {
+        // Records WITHOUT a bankRefNumber (e.g. APY, cash, or manual entries)
+        const windowStart = new Date(item.transactionDate.getTime() - 24 * 3600 * 1000);
+        const windowEnd = new Date(item.transactionDate.getTime() + 24 * 3600 * 1000);
 
         const existingFuzzy = await Transaction.findOne({
           userId: new Types.ObjectId(userId),
           amount: item.amount,
           type: item.type,
+          merchantName: item.merchantName,
           transactionDate: { $gte: windowStart, $lte: windowEnd }
         });
         if (existingFuzzy) {
           isDuplicate = true;
-          if (!existingFuzzy.bankRefNumber && item.bankRefNumber) {
-            existingFuzzy.bankRefNumber = item.bankRefNumber;
-            await existingFuzzy.save();
-          }
-          if (
-            existingFuzzy.merchantName === 'UPI Merchant' ||
-            existingFuzzy.merchantName === 'UPI Counterparty' ||
-            existingFuzzy.merchantName.length < item.merchantName.length
-          ) {
-            existingFuzzy.merchantName = item.merchantName;
-            if (item.vpa && !existingFuzzy.vpa) existingFuzzy.vpa = item.vpa;
-            if (item.bankName && !existingFuzzy.bankName) existingFuzzy.bankName = item.bankName;
-            await existingFuzzy.save();
-          }
         }
       }
 
@@ -478,6 +465,7 @@ export const importStatement = async (req: AuthRequest, res: Response): Promise<
         category: item.category,
         rawNotification: item.rawText,
         transactionDate: item.transactionDate,
+        statementSerial: item.statementSerial,
         isVerified: true,
         isManualEntry: false
       });

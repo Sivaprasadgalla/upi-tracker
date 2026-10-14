@@ -38,6 +38,7 @@ export interface ITransaction {
   category: CategoryType;
   rawNotification?: string;
   transactionDate: string;
+  statementSerial?: number;
   isVerified: boolean;
   isManualEntry?: boolean;
   note?: string;

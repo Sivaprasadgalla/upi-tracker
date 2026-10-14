@@ -166,6 +166,18 @@ export const TransactionDetailModal: React.FC<Props> = ({
                 </>
               ) : null}
 
+              {transaction.statementSerial ? (
+                <>
+                  <View style={[styles.hairline, { backgroundColor: theme.separator }]} />
+                  <View style={styles.detailRow}>
+                    <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>Statement Serial #</Text>
+                    <Text style={[styles.detailValue, { color: theme.primary, fontWeight: '700' }]}>
+                      #{transaction.statementSerial}
+                    </Text>
+                  </View>
+                </>
+              ) : null}
+
               {transaction.note ? (
                 <>
                   <View style={[styles.hairline, { backgroundColor: theme.separator }]} />

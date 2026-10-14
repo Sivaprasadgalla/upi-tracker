@@ -84,7 +84,7 @@ export const TransactionCard: React.FC<Props> = ({
             {transaction.merchantName}
           </Text>
           <Text style={[styles.subDetailText, { color: theme.textSecondary }]} numberOfLines={1}>
-            {transaction.category} • {formattedDate}
+            {transaction.statementSerial ? `#${transaction.statementSerial} • ` : ''}{transaction.category} • {formattedDate}
           </Text>
         </View>
 

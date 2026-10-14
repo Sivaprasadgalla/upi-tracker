@@ -15,6 +15,7 @@ export interface ITransaction extends Document {
   category: CategoryType;
   rawNotification?: string;
   transactionDate: Date;
+  statementSerial?: number;
   isVerified: boolean;
   isManualEntry: boolean;
   tags: string[];
@@ -100,6 +101,11 @@ const TransactionSchema = new Schema<ITransaction>(
     transactionDate: {
       type: Date,
       default: Date.now,
+      index: true
+    },
+    statementSerial: {
+      type: Number,
+      required: false,
       index: true
     },
     isVerified: {

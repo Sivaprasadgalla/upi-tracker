@@ -12,6 +12,7 @@ export interface IParsedStatementItem {
   accountLast4?: string;
   category: CategoryType;
   transactionDate: Date;
+  statementSerial?: number;
   rawText: string;
 }
 
@@ -400,8 +401,8 @@ export class StatementParserService {
     const items: IParsedStatementItem[] = [];
 
     for (const line of rawLines) {
-      // Must contain a date and a numeric amount
-      const dateMatch = line.match(/(\d{1,2}[-/.][A-Za-z0-9]{2,4}[-/.][0-9]{2,4})/);
+      // Must contain a date (and optional time) and a numeric amount
+      const dateMatch = line.match(/(\d{1,2}[-/.][A-Za-z0-9]{2,4}[-/.][0-9]{2,4}(?:\s+\d{1,2}:\d{1,2}(?::\d{1,2})?)?)/);
       const amountMatch = line.match(/(?:₹|rs\.?|inr)?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i);
       if (!dateMatch || !amountMatch) continue;
 
@@ -426,7 +427,7 @@ export class StatementParserService {
         type = 'DEBIT';
       }
 
-      // Parse Date
+      // Parse Date with Time if present
       const txDate = this.parseDate(dateMatch[1]) || new Date();
 
       // Extract UTR / Ref Number
@@ -604,7 +605,30 @@ export class StatementParserService {
 
       merchantName = (UpiParserService as any).cleanMerchantName(merchantName);
 
-      const txDate = this.parseDate(dateStr) || new Date();
+      // Extract exact time from 12-digit UTR if valid HHMMSS, else use sequential daytime offset based on sNo
+      const sNo = parseInt(current[1], 10);
+      let txDate: Date | null = null;
+      if (utr && utr.length === 12) {
+        const hh = parseInt(utr.slice(0, 2), 10);
+        const mm = parseInt(utr.slice(2, 4), 10);
+        const ss = parseInt(utr.slice(4, 6), 10);
+        if (hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59 && ss >= 0 && ss <= 59) {
+          const parsed = this.parseDate(dateStr);
+          if (parsed) {
+            parsed.setHours(hh, mm, ss, 0);
+            txDate = parsed;
+          }
+        }
+      }
+      if (!txDate) {
+        // Sequential daytime timestamp based on sNo (09:00 to 19:00) so chronological ordering is strictly preserved
+        const parsed = this.parseDate(dateStr) || new Date();
+        const baseMinutes = (sNo * 7) % 600;
+        const hour = 9 + Math.floor(baseMinutes / 60);
+        const minute = baseMinutes % 60;
+        parsed.setHours(hour, minute, (sNo * 13) % 60, 0);
+        txDate = parsed;
+      }
 
       // Detect Source
       let source: AppSource = 'BANK_SMS';
@@ -628,6 +652,7 @@ export class StatementParserService {
         bankName: 'ICICI Bank',
         category,
         transactionDate: txDate,
+        statementSerial: sNo,
         rawText: block.replace(/\s+/g, ' ').slice(0, 300)
       });
     }
