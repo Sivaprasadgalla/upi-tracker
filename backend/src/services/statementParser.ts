@@ -37,6 +37,12 @@ export class StatementParserService {
       if (csvItems.length > 0) return csvItems;
     }
 
+    // Check if Multi-line Bank Table Statement (ICICI, HDFC, SBI Savings PDF)
+    if (this.isBankMultiLineTable(trimmed)) {
+      const bankItems = this.parseBankMultiLineTable(trimmed);
+      if (bankItems.length > 0) return bankItems;
+    }
+
     // Otherwise treat as PDF statement text (BHIM, Bank PDF statements)
     return this.parsePdfLines(trimmed);
   }
@@ -482,6 +488,131 @@ export class StatementParserService {
         category,
         transactionDate: txDate,
         rawText: line
+      });
+    }
+
+    return items;
+  }
+
+  /**
+   * Checks if statement is a multi-line bank table (e.g. ICICI Bank statement)
+   */
+  private static isBankMultiLineTable(text: string): boolean {
+    const rowStartRegex = /(?:^|\n)\s*(\d{1,4})\s+(\d{2}[./-]\d{2}[./-]\d{4})/g;
+    const matches = [...text.matchAll(rowStartRegex)];
+    return matches.length >= 2;
+  }
+
+  /**
+   * Parses multi-line bank statement tables (e.g. ICICI Bank PDF statement)
+   */
+  private static parseBankMultiLineTable(text: string): IParsedStatementItem[] {
+    const rowStartRegex = /(?:^|\n)\s*(\d{1,4})\s+(\d{2}[./-]\d{2}[./-]\d{4})([^\n]*)/g;
+    const matches = [...text.matchAll(rowStartRegex)];
+    if (matches.length === 0) return [];
+
+    const items: IParsedStatementItem[] = [];
+    let prevBalance: number | null = null;
+
+    for (let i = 0; i < matches.length; i++) {
+      const current = matches[i];
+      const startIndex = current.index!;
+      const endIndex = i < matches.length - 1 ? matches[i + 1].index! : text.length;
+      const block = text.slice(startIndex, endIndex).trim();
+
+      const dateStr = current[2];
+      const firstLineRest = current[3].trim();
+
+      // Extract all numbers with two decimal places (amounts and balance)
+      const amountsMatch = [...block.matchAll(/(?:\s+|^)([0-9,]+\.[0-9]{2})(?=\s+|$)/g)]
+        .map((m) => parseFloat(m[1].replace(/,/g, '')));
+
+      if (amountsMatch.length === 0) continue;
+
+      let amount = 0;
+      let balance = 0;
+      if (amountsMatch.length >= 2) {
+        amount = amountsMatch[amountsMatch.length - 2];
+        balance = amountsMatch[amountsMatch.length - 1];
+      } else {
+        amount = amountsMatch[0];
+      }
+
+      if (amount <= 0) continue;
+
+      // Determine type (DEBIT vs CREDIT) based on balance change
+      let type: TransactionType = 'DEBIT';
+      if (prevBalance !== null && balance > 0) {
+        if (balance > prevBalance) {
+          type = 'CREDIT';
+        } else {
+          type = 'DEBIT';
+        }
+      } else {
+        if (/(?:payment\s+fr|cashback|refund|salary|deposit|cr\b|neft-idfb)/i.test(block)) {
+          type = 'CREDIT';
+        } else {
+          type = 'DEBIT';
+        }
+      }
+      if (balance > 0) prevBalance = balance;
+
+      // Extract UTR (12 digits)
+      let utr: string | undefined = undefined;
+      const utrMatch = block.match(/(?:bank\/|ref\/|utr\/|upi\/|\b)([0-9]{12})\b/i);
+      if (utrMatch) utr = utrMatch[1];
+
+      // Extract VPA if present
+      let vpa: string | undefined = undefined;
+      const vpaMatch = block.match(/([a-zA-Z0-9.\-_]+@[a-zA-Z0-9]+)/);
+      if (vpaMatch) vpa = vpaMatch[1];
+
+      // Extract merchant / payee name
+      let merchantName = firstLineRest;
+      merchantName = merchantName.replace(/^Debit trxn/i, '').trim();
+      if (!merchantName || merchantName.length < 3) {
+        const upiNameMatch = block.match(/UPI\/([^\/]+)\//i);
+        if (upiNameMatch) {
+          merchantName = upiNameMatch[1].trim();
+        } else {
+          const neftMatch = block.match(/NEFT-[A-Za-z0-9]+-([A-Za-z0-9\s]+)--/i);
+          if (neftMatch) {
+            merchantName = neftMatch[1].trim();
+          }
+        }
+      }
+
+      if (!merchantName || merchantName.length === 0) {
+        merchantName = type === 'DEBIT' ? 'UPI Merchant' : 'UPI Counterparty';
+      }
+
+      merchantName = (UpiParserService as any).cleanMerchantName(merchantName);
+
+      const txDate = this.parseDate(dateStr) || new Date();
+
+      // Detect Source
+      let source: AppSource = 'BANK_SMS';
+      const lower = block.toLowerCase();
+      if (lower.includes('phonepe')) source = 'PHONEPE';
+      else if (lower.includes('gpay') || lower.includes('google pay')) source = 'GPAY';
+      else if (lower.includes('paytm')) source = 'PAYTM';
+      else if (lower.includes('bhim')) source = 'BHIM';
+      else if (lower.includes('amazon')) source = 'AMAZON_PAY';
+      else if (lower.includes('cred')) source = 'CRED';
+
+      const category = (UpiParserService as any).categorize(merchantName, block);
+
+      items.push({
+        amount,
+        type,
+        appSource: source,
+        merchantName,
+        vpa,
+        bankRefNumber: utr,
+        bankName: 'ICICI Bank',
+        category,
+        transactionDate: txDate,
+        rawText: block.replace(/\s+/g, ' ').slice(0, 300)
       });
     }
 

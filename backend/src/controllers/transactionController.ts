@@ -414,7 +414,19 @@ export const importStatement = async (req: AuthRequest, res: Response): Promise<
           userId: new Types.ObjectId(userId),
           bankRefNumber: item.bankRefNumber
         });
-        if (existingByRef) isDuplicate = true;
+        if (existingByRef) {
+          isDuplicate = true;
+          // If existing had a masked or generic name, upgrade it with the clearer name
+          if (
+            existingByRef.merchantName === 'UPI Merchant' ||
+            existingByRef.merchantName === 'UPI Counterparty' ||
+            existingByRef.merchantName.length < item.merchantName.length
+          ) {
+            existingByRef.merchantName = item.merchantName;
+            if (item.vpa && !existingByRef.vpa) existingByRef.vpa = item.vpa;
+            await existingByRef.save();
+          }
+        }
       }
 
       if (!isDuplicate) {
@@ -427,10 +439,15 @@ export const importStatement = async (req: AuthRequest, res: Response): Promise<
           userId: new Types.ObjectId(userId),
           amount: item.amount,
           type: item.type,
-          merchantName: item.merchantName,
           transactionDate: { $gte: startOfDay, $lte: endOfDay }
         });
-        if (existingFuzzy) isDuplicate = true;
+        if (existingFuzzy) {
+          isDuplicate = true;
+          if (!existingFuzzy.bankRefNumber && item.bankRefNumber) {
+            existingFuzzy.bankRefNumber = item.bankRefNumber;
+            await existingFuzzy.save();
+          }
+        }
       }
 
       if (isDuplicate) {
