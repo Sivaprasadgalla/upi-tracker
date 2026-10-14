@@ -1,4 +1,5 @@
-import { AppSource, CategoryType, IParsedUPI, TransactionType, UpiParserService } from './upiParser.js';
+import { AppSource, CategoryType, IParsedUPI, TransactionType } from '../types/index.js';
+import { UpiParserService } from './upiParser.js';
 
 export interface IParsedStatementItem {
   amount: number;
@@ -30,8 +31,24 @@ export class StatementParserService {
       return this.parseBulkSms(trimmed);
     }
 
-    // Otherwise treat as CSV / Delimited Table (PhonePe, Paytm, GPay, Bank Statements)
-    return this.parseCsv(trimmed);
+    // Check if CSV / Delimited Table
+    if (this.isCsvTable(trimmed)) {
+      const csvItems = this.parseCsv(trimmed);
+      if (csvItems.length > 0) return csvItems;
+    }
+
+    // Otherwise treat as PDF statement text (BHIM, Bank PDF statements)
+    return this.parsePdfLines(trimmed);
+  }
+
+  /**
+   * Checks if content is CSV / Delimited Table
+   */
+  private static isCsvTable(text: string): boolean {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length < 2) return false;
+    const firstLine = lines[0];
+    return firstLine.includes(',') || firstLine.includes('\t') || firstLine.includes(';');
   }
 
   /**
@@ -368,4 +385,85 @@ export class StatementParserService {
 
     return type === 'DEBIT' ? 'UPI Merchant' : 'UPI Counterparty';
   }
+
+  /**
+   * Parses line-by-line text extracted from BHIM and Bank PDF statements
+   */
+  private static parsePdfLines(text: string): IParsedStatementItem[] {
+    const rawLines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+    const items: IParsedStatementItem[] = [];
+
+    for (const line of rawLines) {
+      // Must contain a date and a numeric amount
+      const dateMatch = line.match(/(\d{1,2}[-/.][A-Za-z0-9]{2,4}[-/.][0-9]{2,4})/);
+      const amountMatch = line.match(/(?:₹|rs\.?|inr)?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i);
+      if (!dateMatch || !amountMatch) continue;
+
+      // Extract amount
+      const allNums = line.match(/(?:₹|rs\.?|inr)\s*([0-9,]+(?:\.[0-9]{1,2})?)|(?:\s+|^)([0-9,]+\.[0-9]{2})(?:\s+|$)/i);
+      let amount = 0;
+      if (allNums) {
+        amount = this.cleanNumeric(allNums[1] || allNums[2]);
+      } else {
+        amount = this.cleanNumeric(amountMatch[1]);
+      }
+      if (amount <= 0) continue;
+
+      // Skip status failed / declined / cancelled
+      if (/(?:fail|decline|reject|cancelled)/i.test(line)) continue;
+
+      // Determine Type (DEBIT vs CREDIT)
+      let type: TransactionType = 'DEBIT';
+      if (/(?:credit|credited|received|deposit|cr\b|\+\s*[₹Rs])/i.test(line)) {
+        type = 'CREDIT';
+      } else if (/(?:debit|debited|paid|sent|transfer|dr\b|-\s*[₹Rs])/i.test(line)) {
+        type = 'DEBIT';
+      }
+
+      // Parse Date
+      const txDate = this.parseDate(dateMatch[1]) || new Date();
+
+      // Extract UTR / Ref Number
+      let utr: string | undefined = undefined;
+      const utrMatch = line.match(/(?:upi[:\s/-]*|utr[:\s#]*|ref[:\s#]*)([0-9]{8,14})/i) || line.match(/\b([0-9]{12})\b/);
+      if (utrMatch) utr = utrMatch[1];
+
+      // Extract Merchant / Counterparty
+      let cleanDesc = line
+        .replace(dateMatch[0], '')
+        .replace(/(?:₹|rs\.?|inr)?\s*[0-9,]+(?:\.[0-9]{1,2})?/gi, '')
+        .replace(/(?:success|completed|pending|failed|debit|credit|dr|cr)/gi, '')
+        .replace(/\b[0-9]{8,14}\b/g, '')
+        .replace(/(?:upi[:\s/-]*|utr[:\s#]*|ref[:\s#]*)/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const merchantName = this.extractMerchantFromStatement(cleanDesc || line, type);
+
+      // Detect Source
+      let source: AppSource = 'BHIM';
+      const lower = line.toLowerCase();
+      if (lower.includes('phonepe')) source = 'PHONEPE';
+      else if (lower.includes('gpay') || lower.includes('google pay')) source = 'GPAY';
+      else if (lower.includes('paytm')) source = 'PAYTM';
+      else if (lower.includes('bhim')) source = 'BHIM';
+      else if (lower.includes('icici') || lower.includes('hdfc') || lower.includes('sbi')) source = 'BANK_SMS';
+
+      const category = (UpiParserService as any).categorize(merchantName, line);
+
+      items.push({
+        amount,
+        type,
+        appSource: source,
+        merchantName,
+        bankRefNumber: utr,
+        category,
+        transactionDate: txDate,
+        rawText: line
+      });
+    }
+
+    return items;
+  }
 }
+

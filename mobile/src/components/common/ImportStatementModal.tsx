@@ -39,6 +39,7 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
   const [activeTab, setActiveTab] = useState<'file' | 'paste'>('file');
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>('');
+  const [pdfBase64, setPdfBase64] = useState<string | null>(null);
   const [pastedText, setPastedText] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [importStats, setImportStats] = useState<ImportStats | null>(null);
@@ -48,6 +49,7 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
   const resetState = () => {
     setSelectedFileName(null);
     setFileContent('');
+    setPdfBase64(null);
     setPastedText('');
     setIsLoading(false);
     setImportStats(null);
@@ -63,7 +65,7 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
     try {
       Haptics.selectionAsync();
       const res = await DocumentPicker.getDocumentAsync({
-        type: ['text/csv', 'text/plain', 'text/comma-separated-values', 'application/vnd.ms-excel', '*/*'],
+        type: ['application/pdf', 'text/csv', 'text/plain', 'text/comma-separated-values', 'application/vnd.ms-excel', '*/*'],
         copyToCacheDirectory: true
       });
 
@@ -72,9 +74,18 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
         setSelectedFileName(file.name);
         setErrorMsg(null);
 
-        // Read text content
-        const content = await FileSystem.readAsStringAsync(file.uri);
-        setFileContent(content);
+        const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.mimeType === 'application/pdf';
+        if (isPdf) {
+          const base64 = await FileSystem.readAsStringAsync(file.uri, {
+            encoding: FileSystem.EncodingType.Base64
+          });
+          setPdfBase64(base64);
+          setFileContent('');
+        } else {
+          const content = await FileSystem.readAsStringAsync(file.uri);
+          setFileContent(content);
+          setPdfBase64(null);
+        }
       }
     } catch (err: any) {
       console.warn('Error picking document:', err);
@@ -83,11 +94,25 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
   };
 
   const handleImport = async () => {
-    const contentToImport = activeTab === 'file' ? fileContent : pastedText;
+    const payload: any = {};
 
-    if (!contentToImport || contentToImport.trim().length === 0) {
-      Alert.alert('Empty Content', activeTab === 'file' ? 'Please select a CSV or statement file first.' : 'Please paste your statement or SMS text.');
-      return;
+    if (activeTab === 'file') {
+      if (pdfBase64) {
+        payload.fileBase64 = pdfBase64;
+        payload.fileName = selectedFileName;
+        payload.fileType = 'pdf';
+      } else if (fileContent && fileContent.trim().length > 0) {
+        payload.content = fileContent;
+      } else {
+        Alert.alert('Empty File', 'Please select a PDF or CSV statement file first.');
+        return;
+      }
+    } else {
+      if (!pastedText || pastedText.trim().length === 0) {
+        Alert.alert('Empty Content', 'Please paste your statement rows or SMS text.');
+        return;
+      }
+      payload.content = pastedText;
     }
 
     try {
@@ -95,9 +120,7 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
       setErrorMsg(null);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      const res = await api.post('/transactions/import/statement', {
-        content: contentToImport
-      });
+      const res = await api.post('/transactions/import/statement', payload);
 
       if (res.data?.success && res.data?.stats) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -201,7 +224,7 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
                 >
                   <Icon name="document" size={16} color={activeTab === 'file' ? theme.primary : theme.textSecondary} />
                   <Text style={[styles.tabText, { color: activeTab === 'file' ? theme.textPrimary : theme.textSecondary }]}>
-                    Upload File (.CSV)
+                    Upload File (.PDF / .CSV)
                   </Text>
                 </TouchableOpacity>
 
@@ -241,7 +264,7 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
                       {selectedFileName ? selectedFileName : 'Tap to Choose Statement File'}
                     </Text>
                     <Text style={[styles.fileDropSubtitle, { color: theme.textSecondary }]}>
-                      {selectedFileName ? 'File loaded ready to import' : 'Supports PhonePe, Paytm & Bank CSV / Excel files'}
+                      {selectedFileName ? 'File loaded ready to import' : 'Supports BHIM (PDF), PhonePe, Paytm & Bank PDF/CSV statements'}
                     </Text>
                   </TouchableOpacity>
 
@@ -260,7 +283,7 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
               {activeTab === 'paste' && (
                 <View style={styles.tabContent}>
                   <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>
-                    PASTE STATEMENT CSV ROWS OR BANK SMS MESSAGES:
+                    PASTE STATEMENT ROWS, PDF TEXT OR BANK SMS MESSAGES:
                   </Text>
                   <TextInput
                     style={[
@@ -274,7 +297,7 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
                     multiline
                     numberOfLines={6}
                     textAlignVertical="top"
-                    placeholder="Paste PhonePe statement rows, CSV content, or copy-paste multiple Bank SMS messages here..."
+                    placeholder="Paste BHIM / PhonePe statement text, CSV rows, or copy-paste multiple Bank SMS messages here..."
                     placeholderTextColor={theme.textTertiary}
                     value={pastedText}
                     onChangeText={setPastedText}
@@ -294,20 +317,23 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
                 activeOpacity={0.7}
               >
                 <Text style={[styles.guideToggleText, { color: theme.primary }]}>
-                  {showGuide ? 'Hide Instructions ▲' : '💡 How to download statements from PhonePe/Banks ▼'}
+                  {showGuide ? 'Hide Instructions ▲' : '💡 How to download statements from BHIM / PhonePe / Banks ▼'}
                 </Text>
               </TouchableOpacity>
 
               {showGuide && (
                 <View style={[styles.guideBox, { backgroundColor: theme.fill }]}>
                   <Text style={[styles.guideStep, { color: theme.textPrimary }]}>
-                    • <Text style={{ fontWeight: '700' }}>PhonePe:</Text> Open PhonePe $\rightarrow$ History $\rightarrow$ Tap the Download Statement icon at the top $\rightarrow$ Choose duration $\rightarrow$ Download CSV.
+                    • <Text style={{ fontWeight: '700' }}>BHIM UPI (PDF):</Text> Open BHIM $\rightarrow$ Transactions $\rightarrow$ Download Statement $\rightarrow$ Save PDF $\rightarrow$ Select the PDF file here!
+                  </Text>
+                  <Text style={[styles.guideStep, { color: theme.textPrimary }]}>
+                    • <Text style={{ fontWeight: '700' }}>PhonePe:</Text> Open PhonePe $\rightarrow$ History $\rightarrow$ Tap the Download Statement icon at the top $\rightarrow$ Choose duration $\rightarrow$ Download CSV/PDF.
                   </Text>
                   <Text style={[styles.guideStep, { color: theme.textPrimary }]}>
                     • <Text style={{ fontWeight: '700' }}>Paytm:</Text> Balance &amp; History $\rightarrow$ Request Statement $\rightarrow$ Select Dates $\rightarrow$ Download CSV.
                   </Text>
                   <Text style={[styles.guideStep, { color: theme.textPrimary }]}>
-                    • <Text style={{ fontWeight: '700' }}>Bank (ICICI/HDFC/SBI):</Text> Netbanking or Mobile Banking App $\rightarrow$ Statements $\rightarrow$ Export CSV/Excel.
+                    • <Text style={{ fontWeight: '700' }}>Bank (ICICI/HDFC/SBI):</Text> Netbanking or Mobile Banking App $\rightarrow$ Statements $\rightarrow$ Export PDF/CSV.
                   </Text>
                 </View>
               )}
@@ -551,3 +577,4 @@ const styles = StyleSheet.create({
     marginTop: 2
   }
 });
+

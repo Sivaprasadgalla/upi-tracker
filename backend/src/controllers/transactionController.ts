@@ -8,6 +8,7 @@ import { UpiParserService } from '../services/upiParser.js';
 import { StatementParserService } from '../services/statementParser.js';
 import { BudgetAlertService } from '../services/budgetAlertService.js';
 import { AppSource } from '../types/index.js';
+import pdf from 'pdf-parse';
 
 export const ingestNotification = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -350,17 +351,34 @@ export const importStatement = async (req: AuthRequest, res: Response): Promise<
       return;
     }
 
-    const { content } = req.body;
-    if (!content || typeof content !== 'string' || content.trim().length === 0) {
-      res.status(400).json({ success: false, message: 'Statement content (CSV text or SMS) is required.' });
+    const { content, fileBase64, fileName, fileType } = req.body;
+    let statementText = content || '';
+
+    // If PDF base64 is provided
+    if (fileBase64 && (fileType === 'pdf' || fileName?.toLowerCase().endsWith('.pdf'))) {
+      try {
+        const buffer = Buffer.from(fileBase64, 'base64');
+        const pdfData = await (pdf as any)(buffer);
+        statementText = pdfData.text || '';
+      } catch (pdfErr: any) {
+        res.status(400).json({
+          success: false,
+          message: 'Could not extract text from the PDF. If the PDF is password-protected, please remove the password or copy and paste the text.'
+        });
+        return;
+      }
+    }
+
+    if (!statementText || typeof statementText !== 'string' || statementText.trim().length === 0) {
+      res.status(400).json({ success: false, message: 'Statement content (PDF, CSV, or text) is required.' });
       return;
     }
 
-    const parsedItems = StatementParserService.parse(content);
+    const parsedItems = StatementParserService.parse(statementText);
     if (parsedItems.length === 0) {
       res.status(422).json({
         success: false,
-        message: 'Could not extract any valid transactions from the statement. Ensure it is a valid PhonePe, Paytm, or Bank CSV/statement.'
+        message: 'Could not extract any valid transactions from the statement. Ensure it is a valid PhonePe, BHIM, Paytm, or Bank statement.'
       });
       return;
     }
@@ -425,7 +443,7 @@ export const importStatement = async (req: AuthRequest, res: Response): Promise<
 
       if (item.type === 'DEBIT') {
         totalDebitAmount += item.amount;
-        BudgetAlertService.evaluate(userId, item.amount).catch(() => {});
+        BudgetAlertService.evaluateBudgets(userId).catch(() => {});
       } else {
         totalCreditAmount += item.amount;
       }
