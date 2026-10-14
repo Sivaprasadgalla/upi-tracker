@@ -48,6 +48,20 @@ const testCases = [
     text: 'Received ₹1,500 from Rahul Sharma on PhonePe. Ref: 426819234573',
     expectedAmount: 1500,
     expectedType: 'CREDIT'
+  },
+  {
+    name: 'ICICI Bank - Debit Expense to Ashok Cheemala',
+    text: 'ICICI Bank Acct XX305 debited for Rs 1.00 on 13-Oct-26; ASHOK CHEEMALA credited. UPI:001203174818. Call 18002662 for dispute. SMS BLOCK 305 to 9215676766',
+    expectedAmount: 1,
+    expectedType: 'DEBIT',
+    expectedMerchant: 'ASHOK CHEEMALA'
+  },
+  {
+    name: 'ICICI Bank - Credit Income from Ashok Cheemala',
+    text: 'Dear Customer, Acct XX305 is credited with Rs 2000.00 on 14-Oct-26 from ASHOK CHEEMALA. UPI:718174864768-ICICI Bank.',
+    expectedAmount: 2000,
+    expectedType: 'CREDIT',
+    expectedMerchant: 'ASHOK CHEEMALA'
   }
 ];
 
@@ -68,15 +82,16 @@ for (const tc of testCases) {
   const amountMatch = result.amount === tc.expectedAmount;
   const typeMatch = result.type === tc.expectedType;
   const categoryMatch = !tc.expectedCategory || result.category === tc.expectedCategory;
+  const merchantMatch = !(tc as any).expectedMerchant || result.merchantName === (tc as any).expectedMerchant;
 
-  if (amountMatch && typeMatch && categoryMatch) {
+  if (amountMatch && typeMatch && categoryMatch && merchantMatch) {
     console.log(`✅ PASSED: ${tc.name}`);
     console.log(`   Amount: ₹${result.amount} | Type: ${result.type} | Category: ${result.category} | Merchant: "${result.merchantName}" | Ref: ${result.bankRefNumber || 'N/A'}`);
     passed++;
   } else {
     console.error(`❌ FAILED: ${tc.name}`);
-    console.error(`   Expected: Amount=${tc.expectedAmount}, Type=${tc.expectedType}, Category=${tc.expectedCategory}`);
-    console.error(`   Received: Amount=${result.amount}, Type=${result.type}, Category=${result.category}`);
+    console.error(`   Expected: Amount=${tc.expectedAmount}, Type=${tc.expectedType}, Category=${tc.expectedCategory}, Merchant=${(tc as any).expectedMerchant}`);
+    console.error(`   Received: Amount=${result.amount}, Type=${result.type}, Category=${result.category}, Merchant="${result.merchantName}"`);
     failed++;
   }
 }

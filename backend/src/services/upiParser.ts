@@ -236,14 +236,19 @@ export class UpiParserService {
         }
       }
     } else {
-      // Patterns for Credits: "received from X", "sent by X"
+      // Patterns for Credits: "from X", "received from X", "sent by X", "transfer from X"
       const creditPatterns = [
-        /(?:received from|sent by|credited by|transfer from|from)\s+([A-Za-z0-9\s.&'-]{2,35}?)(?=\s+(?:via|using|on|in|ref|\.|$))/i
+        /(?:by\s+vpa\s+)([A-Za-z0-9@._-]{3,35})/i,
+        /(?:by\s+transfer\s+from|transfer\s+by|transfer\s+from|received\s+from|sent\s+by|from)\s+([A-Za-z0-9\s&'-]{2,35}?)(?=\s*(?:\.|\;|\-|\,|\(|\bvia\b|\busing\b|\bon\b|\bin\b|\bref\b|\bupi\b|$))/i,
+        /(?:credited\s+to\s+[^,]+?\s+by\s+)([A-Za-z0-9\s&'-]{2,35}?)(?=\s*(?:\.|\;|\-|\,|\(|\bvia\b|\busing\b|\bon\b|\bin\b|\bref\b|\bupi\b|$))/i
       ];
       for (const pattern of creditPatterns) {
         const match = clean.match(pattern);
         if (match && match[1]) {
-          return this.cleanMerchantName(match[1].trim());
+          const val = match[1].trim();
+          if (val.length > 1 && !['a/c', 'account', 'bank', 'upi', 'user'].includes(val.toLowerCase())) {
+            return this.cleanMerchantName(val);
+          }
         }
       }
     }

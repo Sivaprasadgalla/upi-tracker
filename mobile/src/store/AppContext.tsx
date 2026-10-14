@@ -211,9 +211,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updated.type = 'DEBIT';
       }
       if (updated.merchantName === 'UPI Merchant') {
-        const match = raw.match(/(?:;\s*|to\s+)([A-Za-z0-9\s.&'-]{2,35}?)\s+credited/i);
-        if (match && match[1]) {
-          updated.merchantName = match[1].trim();
+        const debitMatch = raw.match(/(?:;\s*|to\s+)([A-Za-z0-9\s.&'-]{2,35}?)\s+credited/i);
+        if (debitMatch && debitMatch[1]) {
+          updated.merchantName = debitMatch[1].trim();
+        } else {
+          const creditMatch = raw.match(
+            /(?:by\s+transfer\s+from|transfer\s+by|transfer\s+from|received\s+from|sent\s+by|from)\s+([A-Za-z0-9\s&'-]{2,35}?)(?=\s*(?:\.|\;|\-|\,|\(|\bvia\b|\busing\b|\bon\b|\bin\b|\bref\b|\bupi\b|$))/i
+          );
+          if (creditMatch && creditMatch[1]) {
+            updated.merchantName = creditMatch[1].trim();
+          }
         }
       }
       return updated;

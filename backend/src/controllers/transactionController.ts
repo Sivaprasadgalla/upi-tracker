@@ -181,6 +181,17 @@ export const getTransactions = async (req: AuthRequest, res: Response): Promise<
       Transaction.countDocuments(query)
     ]);
 
+    // Auto-heal existing transactions in DB where merchantName was defaulted to 'UPI Merchant'
+    for (const tx of transactions) {
+      if (tx.merchantName === 'UPI Merchant' && tx.rawNotification) {
+        const reParsed = UpiParserService.parse(tx.rawNotification, tx.appSource);
+        if (reParsed && reParsed.merchantName && reParsed.merchantName !== 'UPI Merchant') {
+          tx.merchantName = reParsed.merchantName;
+          Transaction.updateOne({ _id: tx._id }, { $set: { merchantName: reParsed.merchantName } }).exec();
+        }
+      }
+    }
+
     res.json({
       success: true,
       data: transactions,
