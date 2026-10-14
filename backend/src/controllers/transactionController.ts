@@ -407,7 +407,7 @@ export const importStatement = async (req: AuthRequest, res: Response): Promise<
     for (const item of parsedItems) {
       // Deduplication check:
       // 1. By bankRefNumber if available
-      // 2. Or by same amount, type, merchantName, and date within 1 day
+      // 2. Or by same amount, type, and date within +/- 36 hours (cross-timezone deduplication)
       let isDuplicate = false;
       if (item.bankRefNumber) {
         const existingByRef = await Transaction.findOne({
@@ -424,27 +424,36 @@ export const importStatement = async (req: AuthRequest, res: Response): Promise<
           ) {
             existingByRef.merchantName = item.merchantName;
             if (item.vpa && !existingByRef.vpa) existingByRef.vpa = item.vpa;
+            if (item.bankName && !existingByRef.bankName) existingByRef.bankName = item.bankName;
             await existingByRef.save();
           }
         }
       }
 
       if (!isDuplicate) {
-        const startOfDay = new Date(item.transactionDate);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(item.transactionDate);
-        endOfDay.setHours(23, 59, 59, 999);
+        const windowStart = new Date(item.transactionDate.getTime() - 36 * 3600 * 1000);
+        const windowEnd = new Date(item.transactionDate.getTime() + 36 * 3600 * 1000);
 
         const existingFuzzy = await Transaction.findOne({
           userId: new Types.ObjectId(userId),
           amount: item.amount,
           type: item.type,
-          transactionDate: { $gte: startOfDay, $lte: endOfDay }
+          transactionDate: { $gte: windowStart, $lte: windowEnd }
         });
         if (existingFuzzy) {
           isDuplicate = true;
           if (!existingFuzzy.bankRefNumber && item.bankRefNumber) {
             existingFuzzy.bankRefNumber = item.bankRefNumber;
+            await existingFuzzy.save();
+          }
+          if (
+            existingFuzzy.merchantName === 'UPI Merchant' ||
+            existingFuzzy.merchantName === 'UPI Counterparty' ||
+            existingFuzzy.merchantName.length < item.merchantName.length
+          ) {
+            existingFuzzy.merchantName = item.merchantName;
+            if (item.vpa && !existingFuzzy.vpa) existingFuzzy.vpa = item.vpa;
+            if (item.bankName && !existingFuzzy.bankName) existingFuzzy.bankName = item.bankName;
             await existingFuzzy.save();
           }
         }

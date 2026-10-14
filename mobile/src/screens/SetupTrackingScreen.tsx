@@ -21,6 +21,7 @@ import { Icon } from '../components/common/Icon';
 import { ImportStatementModal } from '../components/common/ImportStatementModal';
 import { BiometricService } from '../services/biometricService';
 import { AndroidListenerBridge } from '../services/androidListenerBridge';
+import { api } from '../api/client';
 
 export const SetupTrackingScreen: React.FC = () => {
   const {
@@ -64,6 +65,51 @@ export const SetupTrackingScreen: React.FC = () => {
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  const [isClearing, setIsClearing] = useState(false);
+
+  const handleClearAllTransactions = () => {
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+
+    Alert.alert(
+      'Clear All Transactions?',
+      'This will permanently wipe all transactions from your cloud account and reset budget spent to ₹0 so you can start fresh.\n\nThis action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear All Data',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            } catch {}
+            setIsClearing(true);
+            try {
+              const res = await api.delete('/transactions/purge/all');
+              if (res.data?.success) {
+                await refreshData();
+                try {
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                } catch {}
+                Alert.alert(
+                  'Database Cleared',
+                  'All transactions have been deleted and your spending has been reset to ₹0. You can now re-import your statement cleanly.'
+                );
+              } else {
+                Alert.alert('Error', res.data?.message || 'Failed to clear transactions.');
+              }
+            } catch (err: any) {
+              Alert.alert('Error', err.response?.data?.message || err.message || 'Failed to clear transactions.');
+            } finally {
+              setIsClearing(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const isIOSUser =
@@ -531,6 +577,56 @@ export const SetupTrackingScreen: React.FC = () => {
               <Text style={{ fontSize: 13, fontWeight: '600', color: theme.textPrimary }}>Join / Switch Account</Text>
             </TouchableOpacity>
           </View>
+        </View>
+
+        {/* Section 8: Danger Zone - Clear All Transactions */}
+        <Text style={[styles.sectionHeader, { color: theme.danger, marginTop: 28 }]}>
+          DANGER ZONE
+        </Text>
+        <View style={[styles.insetGroupCard, { backgroundColor: theme.cardBg, borderColor: theme.danger + '40', padding: 16 }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+            <View style={[styles.iconSquircle, { backgroundColor: theme.dangerLight }]}>
+              <Icon name="trash" size={20} color={theme.danger} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: theme.textPrimary }}>
+                Clear All Transactions
+              </Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                Wipe all records &amp; reset budget spending to ₹0
+              </Text>
+            </View>
+          </View>
+
+          <Text style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18, marginBottom: 14 }}>
+            Permanently deletes all imported bank statements, SMS notifications, and manual transactions from your cloud account. Useful if you want to start completely fresh and re-import.
+          </Text>
+
+          <TouchableOpacity
+            style={{
+              backgroundColor: isDark ? '#3E1015' : '#FEECEE',
+              borderColor: theme.danger,
+              borderWidth: 1,
+              height: 44,
+              borderRadius: 10,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8
+            }}
+            onPress={handleClearAllTransactions}
+            disabled={isClearing}
+            activeOpacity={0.7}
+          >
+            {isClearing ? (
+              <ActivityIndicator size="small" color={theme.danger} />
+            ) : (
+              <Icon name="trash" size={18} color={theme.danger} />
+            )}
+            <Text style={{ color: theme.danger, fontWeight: '700', fontSize: 14 }}>
+              {isClearing ? 'Clearing Database...' : 'Clear All Transactions'}
+            </Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
 

@@ -448,12 +448,16 @@ export class StatementParserService {
           let rawName = targetHandle[2]?.trim();
           if (rawName && rawName.length > 0) {
             const cleanedMask = rawName.replace(/^x+/i, '').trim();
-            merchantName = cleanedMask.length > 1 ? cleanedMask : rawName;
+            if (cleanedMask.length > 1 && !/^(to|from|payment|paid)$/i.test(cleanedMask)) {
+              merchantName = cleanedMask;
+            } else if (rawName.length > 1 && !/^(to|from|payment|paid)$/i.test(rawName)) {
+              merchantName = rawName;
+            }
           }
         }
       }
 
-      if (!merchantName || merchantName.length === 0) {
+      if (!merchantName || merchantName.length <= 1 || /^(to|from|payment|paid)$/i.test(merchantName)) {
         let cleanDesc = line
           .replace(dateMatch[0], '')
           .replace(/(?:₹|rs\.?|inr)?\s*[0-9,]+(?:\.[0-9]{1,2})?/gi, '')
@@ -549,7 +553,10 @@ export class StatementParserService {
           type = 'DEBIT';
         }
       } else {
-        if (/(?:payment\s+fr|cashback|refund|salary|deposit|cr\b|neft-idfb)/i.test(block)) {
+        // Opening row fallback
+        if (/(?:debit\s+trxn|debit|dr\b|withdrawal)/i.test(block)) {
+          type = 'DEBIT';
+        } else if (/(?:payment\s+fr|cashback|refund|salary|deposit|credit|cr\b|neft-idfb)/i.test(block)) {
           type = 'CREDIT';
         } else {
           type = 'DEBIT';
@@ -569,7 +576,7 @@ export class StatementParserService {
 
       // Extract merchant / payee name
       let merchantName = firstLineRest;
-      merchantName = merchantName.replace(/^Debit trxn/i, '').trim();
+      merchantName = merchantName.replace(/^Debit trxn/i, '').replace(/^Credit trxn/i, '').trim();
       if (!merchantName || merchantName.length < 3) {
         const upiNameMatch = block.match(/UPI\/([^\/]+)\//i);
         if (upiNameMatch) {
@@ -578,6 +585,15 @@ export class StatementParserService {
           const neftMatch = block.match(/NEFT-[A-Za-z0-9]+-([A-Za-z0-9\s]+)--/i);
           if (neftMatch) {
             merchantName = neftMatch[1].trim();
+          } else {
+            // Check if block contains APY or other schemes
+            const lines = block.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+            for (const line of lines) {
+              if (line.toUpperCase().includes('APY')) {
+                merchantName = 'Atal Pension Yojana (APY)';
+                break;
+              }
+            }
           }
         }
       }

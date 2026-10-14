@@ -20,6 +20,8 @@ router.post('/import/statement', authenticate, importStatement);
 
 // Purge / Reset endpoint to start fresh
 router.delete('/purge/all', authenticate, purgeAllUserData);
+router.delete('/clear/all', authenticate, purgeAllUserData);
+router.post('/clear/all', authenticate, purgeAllUserData);
 
 // Core CRUD
 router.get('/', authenticate, getTransactions);
