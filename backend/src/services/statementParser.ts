@@ -428,22 +428,43 @@ export class StatementParserService {
       const utrMatch = line.match(/(?:upi[:\s/-]*|utr[:\s#]*|ref[:\s#]*)([0-9]{8,14})/i) || line.match(/\b([0-9]{12})\b/);
       if (utrMatch) utr = utrMatch[1];
 
-      // Extract Merchant / Counterparty
-      let cleanDesc = line
-        .replace(dateMatch[0], '')
-        .replace(/(?:₹|rs\.?|inr)?\s*[0-9,]+(?:\.[0-9]{1,2})?/gi, '')
-        .replace(/(?:success|completed|pending|failed|debit|credit|dr|cr)/gi, '')
-        .replace(/\b[0-9]{8,14}\b/g, '')
-        .replace(/(?:upi[:\s/-]*|utr[:\s#]*|ref[:\s#]*)/gi, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+      // Check for BHIM handles with counterparty names: handle@bank(Name)
+      const bhimHandles = [...line.matchAll(/([a-zA-Z0-9.\-_]+@[a-zA-Z0-9]+)\(([^)]*)\)/g)];
+      let merchantName = '';
+      let vpa: string | undefined = undefined;
 
-      const merchantName = this.extractMerchantFromStatement(cleanDesc || line, type);
+      if (bhimHandles.length > 0) {
+        // If DEBIT: Counterparty is Receiver (handle 1)
+        // If CREDIT: Counterparty is Sender (handle 0)
+        const targetHandle = type === 'CREDIT' ? bhimHandles[0] : (bhimHandles[1] || bhimHandles[0]);
+        if (targetHandle) {
+          vpa = targetHandle[1];
+          let rawName = targetHandle[2]?.trim();
+          if (rawName && rawName.length > 0) {
+            const cleanedMask = rawName.replace(/^x+/i, '').trim();
+            merchantName = cleanedMask.length > 1 ? cleanedMask : rawName;
+          }
+        }
+      }
+
+      if (!merchantName || merchantName.length === 0) {
+        let cleanDesc = line
+          .replace(dateMatch[0], '')
+          .replace(/(?:₹|rs\.?|inr)?\s*[0-9,]+(?:\.[0-9]{1,2})?/gi, '')
+          .replace(/(?:success|completed|pending|failed|debit|credit|dr|cr)/gi, '')
+          .replace(/\b[0-9]{8,14}\b/g, '')
+          .replace(/(?:upi[:\s/-]*|utr[:\s#]*|ref[:\s#]*)/gi, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        merchantName = this.extractMerchantFromStatement(cleanDesc || line, type);
+      }
 
       // Detect Source
       let source: AppSource = 'BHIM';
       const lower = line.toLowerCase();
-      if (lower.includes('phonepe')) source = 'PHONEPE';
+      if (bhimHandles.length > 0) source = 'BHIM';
+      else if (lower.includes('phonepe')) source = 'PHONEPE';
       else if (lower.includes('gpay') || lower.includes('google pay')) source = 'GPAY';
       else if (lower.includes('paytm')) source = 'PAYTM';
       else if (lower.includes('bhim')) source = 'BHIM';
@@ -456,6 +477,7 @@ export class StatementParserService {
         type,
         appSource: source,
         merchantName,
+        vpa,
         bankRefNumber: utr,
         category,
         transactionDate: txDate,

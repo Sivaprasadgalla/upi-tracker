@@ -40,5 +40,18 @@ smsResults.forEach((item, idx) => {
   console.log(`  ${idx + 1}. [${item.type}] ₹${item.amount} to "${item.merchantName}" (${item.category}) Ref: ${item.bankRefNumber || 'N/A'}`);
 });
 
+// 4. BHIM PDF Statement Lines
+const bhimPdf = `14/10/2026 14:17:21 ICICI Bank XXXXXXXXXX05 xxxxx27588@upi(GALLA SIVA PRASAD) xxxxx78627@ybl(xxxxxxxxRIES) 141721888688 PAY 30.00 DR SUCCESS
+13/10/2026 00:12:03 ICICI Bank XXXXXXXXXX05 xxxxx27588@upi(GALLA SIVA PRASAD) xxxxx20228-2@ybl(xxxxxxxxMALA) 001203174818 PAY 1.00 DR SUCCESS
+12/10/2026 23:14:09 ICICI Bank XXXXXXXXXX05 xxxxxxxhback@hdfcbank(NPCI BHIM) xxxxx27588@upi() 104236512912 PAY 8.00 CR SUCCESS
+12/10/2026 15:27:26 ICICI Bank XXXXXXXXXX05 xxxxx27588@upi(GALLA SIVA PRASAD) xxntra2.payu@hdfcbank(MYNTRA) 152726805297 PAY 438.20 DR SUCCESS
+02/10/2026 10:08:42 ICICI Bank XXXXXXXXXX05 xxxxx27588@upi(GALLA SIVA PRASAD) xxxxxxxxnline.gpay@okpayaxis(Meesho) 100842708567 PAY 735.00 DR SUCCESS`;
+
+const bhimResults = StatementParserService.parse(bhimPdf);
+console.log(`\nBHIM PDF Parsed: ${bhimResults.length} items (expected 5)`);
+bhimResults.forEach((item, idx) => {
+  console.log(`  ${idx + 1}. [${item.type}] ₹${item.amount} to "${item.merchantName}" (${item.category}) Ref: ${item.bankRefNumber || 'N/A'}`);
+});
+
 console.log('\n🎉 All statement tests executed!');
 

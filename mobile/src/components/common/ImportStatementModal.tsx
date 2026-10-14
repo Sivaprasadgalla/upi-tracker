@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useTheme } from '../../theme/ThemeContext';
 import { useApp } from '../../store/AppContext';
 import { api } from '../../api/client';
