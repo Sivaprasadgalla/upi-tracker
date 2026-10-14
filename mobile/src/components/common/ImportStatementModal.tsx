@@ -40,6 +40,7 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>('');
   const [pdfBase64, setPdfBase64] = useState<string | null>(null);
+  const [pdfPassword, setPdfPassword] = useState<string>('');
   const [pastedText, setPastedText] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [importStats, setImportStats] = useState<ImportStats | null>(null);
@@ -50,6 +51,7 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
     setSelectedFileName(null);
     setFileContent('');
     setPdfBase64(null);
+    setPdfPassword('');
     setPastedText('');
     setIsLoading(false);
     setImportStats(null);
@@ -76,8 +78,9 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
 
         const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.mimeType === 'application/pdf';
         if (isPdf) {
+          const encodingOption = (FileSystem.EncodingType?.Base64 || 'base64') as any;
           const base64 = await FileSystem.readAsStringAsync(file.uri, {
-            encoding: FileSystem.EncodingType.Base64
+            encoding: encodingOption
           });
           setPdfBase64(base64);
           setFileContent('');
@@ -89,7 +92,7 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
       }
     } catch (err: any) {
       console.warn('Error picking document:', err);
-      setErrorMsg('Could not open file. Try using the "Paste Statement" tab.');
+      setErrorMsg(`Could not read file: ${err.message || 'unknown error'}. Try using the "Paste Statement" tab.`);
     }
   };
 
@@ -101,6 +104,9 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
         payload.fileBase64 = pdfBase64;
         payload.fileName = selectedFileName;
         payload.fileType = 'pdf';
+        if (pdfPassword && pdfPassword.trim().length > 0) {
+          payload.pdfPassword = pdfPassword.trim();
+        }
       } else if (fileContent && fileContent.trim().length > 0) {
         payload.content = fileContent;
       } else {
@@ -275,6 +281,31 @@ export const ImportStatementModal: React.FC<ImportStatementModalProps> = ({ visi
                     >
                       <Text style={{ fontSize: 13, color: theme.primary, fontWeight: '600' }}>Change File</Text>
                     </TouchableOpacity>
+                  )}
+
+                  {/* Optional Password Input for protected PDFs */}
+                  {selectedFileName?.toLowerCase().endsWith('.pdf') && (
+                    <View style={{ marginTop: 14 }}>
+                      <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>
+                        PDF PASSWORD (IF STATEMENT IS PROTECTED):
+                      </Text>
+                      <TextInput
+                        style={[
+                          styles.passwordInput,
+                          {
+                            backgroundColor: theme.fill,
+                            borderColor: theme.cardBorder,
+                            color: theme.textPrimary
+                          }
+                        ]}
+                        value={pdfPassword}
+                        onChangeText={setPdfPassword}
+                        placeholder="e.g., DOB (DDMMYYYY) or Mobile Number"
+                        placeholderTextColor={theme.textTertiary}
+                        secureTextEntry={false}
+                        autoCapitalize="none"
+                      />
+                    </View>
                   )}
                 </View>
               )}
@@ -470,6 +501,13 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 13,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
+  },
+  passwordInput: {
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 0.5,
+    paddingHorizontal: 12,
+    fontSize: 14
   },
   guideToggle: {
     paddingVertical: 8,

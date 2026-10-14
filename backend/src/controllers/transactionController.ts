@@ -8,7 +8,7 @@ import { UpiParserService } from '../services/upiParser.js';
 import { StatementParserService } from '../services/statementParser.js';
 import { BudgetAlertService } from '../services/budgetAlertService.js';
 import { AppSource } from '../types/index.js';
-import pdf from 'pdf-parse';
+import * as pdfModule from 'pdf-parse';
 
 export const ingestNotification = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -351,19 +351,34 @@ export const importStatement = async (req: AuthRequest, res: Response): Promise<
       return;
     }
 
-    const { content, fileBase64, fileName, fileType } = req.body;
+    const { content, fileBase64, fileName, fileType, pdfPassword } = req.body;
     let statementText = content || '';
 
     // If PDF base64 is provided
     if (fileBase64 && (fileType === 'pdf' || fileName?.toLowerCase().endsWith('.pdf'))) {
       try {
         const buffer = Buffer.from(fileBase64, 'base64');
-        const pdfData = await (pdf as any)(buffer);
-        statementText = pdfData.text || '';
+        const PDFParserClass = (pdfModule as any).PDFParse || (pdfModule as any).default?.PDFParse;
+        if (PDFParserClass) {
+          const opts: any = { data: buffer };
+          if (pdfPassword && typeof pdfPassword === 'string' && pdfPassword.trim().length > 0) {
+            opts.password = pdfPassword.trim();
+          }
+          const parser = new PDFParserClass(opts);
+          const pdfData = await parser.getText();
+          statementText = pdfData.text || '';
+          if (parser.destroy) await parser.destroy();
+        } else if (typeof pdfModule === 'function') {
+          const pdfData = await (pdfModule as any)(buffer);
+          statementText = pdfData.text || '';
+        }
       } catch (pdfErr: any) {
+        console.error('PDF parsing error:', pdfErr);
         res.status(400).json({
           success: false,
-          message: 'Could not extract text from the PDF. If the PDF is password-protected, please remove the password or copy and paste the text.'
+          message: pdfErr?.message?.toLowerCase().includes('password')
+            ? 'This PDF is password-protected. Please remove the password or copy and paste the statement text.'
+            : `Could not extract text from the PDF: ${pdfErr?.message || 'Invalid format'}. If it is password protected, please remove the password first.`
         });
         return;
       }

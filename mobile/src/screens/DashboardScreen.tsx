@@ -15,6 +15,7 @@ import { LimitMeter } from '../components/common/LimitMeter';
 import { TransactionCard } from '../components/common/TransactionCard';
 import { ManualAddTransactionModal } from '../components/common/ManualAddTransactionModal';
 import { TransactionDetailModal } from '../components/common/TransactionDetailModal';
+import { ImportStatementModal } from '../components/common/ImportStatementModal';
 import { FloatingAddButton } from '../components/common/FloatingAddButton';
 import { Icon } from '../components/common/Icon';
 import { AppLogo } from '../components/common/AppLogo';
@@ -35,6 +36,7 @@ export const DashboardScreen: React.FC = () => {
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isManualModalVisible, setIsManualModalVisible] = useState(false);
+  const [isImportModalVisible, setIsImportModalVisible] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<ITransaction | null>(null);
   const [transactionToEdit, setTransactionToEdit] = useState<ITransaction | null>(null);
   const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
@@ -193,6 +195,20 @@ export const DashboardScreen: React.FC = () => {
 
           <TouchableOpacity
             style={styles.actionItem}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setIsImportModalVisible(true);
+            }}
+            activeOpacity={0.75}
+          >
+            <View style={[styles.actionCircle, { backgroundColor: theme.primaryLight, borderColor: theme.primary }]}>
+              <Icon name="download" size={22} color={theme.primary} />
+            </View>
+            <Text style={[styles.actionLabel, { color: theme.textPrimary }]}>Import</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionItem}
             onPress={() => setActiveTab('transactions')}
             activeOpacity={0.75}
           >
@@ -224,6 +240,32 @@ export const DashboardScreen: React.FC = () => {
             <Text style={[styles.actionLabel, { color: theme.textPrimary }]}>Sync</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Statement Import Banner Card */}
+        <TouchableOpacity
+          style={[styles.importBannerCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
+          onPress={() => {
+            Haptics.selectionAsync();
+            setIsImportModalVisible(true);
+          }}
+          activeOpacity={0.75}
+        >
+          <View style={[styles.importBannerIcon, { backgroundColor: theme.primaryLight }]}>
+            <Icon name="document" size={20} color={theme.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={[styles.importBannerTitle, { color: theme.textPrimary }]}>Import Past Statement</Text>
+              <View style={[styles.newBadge, { backgroundColor: theme.primary }]}>
+                <Text style={styles.newBadgeText}>PDF / CSV</Text>
+              </View>
+            </View>
+            <Text style={[styles.importBannerSub, { color: theme.textSecondary }]}>
+              Upload BHIM (PDF), PhonePe, Paytm, or Bank statements
+            </Text>
+          </View>
+          <Icon name="chevron-right" size={16} color={theme.textTertiary} />
+        </TouchableOpacity>
 
         {/* Active Spending Limits Section */}
         <View style={styles.sectionHeaderRow}>
@@ -293,6 +335,12 @@ export const DashboardScreen: React.FC = () => {
         }}
         onEdit={handleEditFromDetail}
         onDelete={handleDeleteFromDetail}
+      />
+
+      {/* Bulk Statement Import Modal (BHIM, PhonePe, Paytm, Bank Statements) */}
+      <ImportStatementModal
+        visible={isImportModalVisible}
+        onClose={() => setIsImportModalVisible(false)}
       />
     </SafeAreaView>
   );
@@ -438,6 +486,41 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     letterSpacing: -0.1
+  },
+  importBannerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 0.5,
+    marginBottom: 24,
+    gap: 12
+  },
+  importBannerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  importBannerTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: -0.2
+  },
+  importBannerSub: {
+    fontSize: 12,
+    marginTop: 2
+  },
+  newBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6
+  },
+  newBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700'
   },
   sectionHeaderRow: {
     flexDirection: 'row',

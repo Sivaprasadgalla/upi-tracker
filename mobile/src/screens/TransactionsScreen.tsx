@@ -396,6 +396,28 @@ export const TransactionsScreen: React.FC = () => {
               <Text style={[styles.emptySub, { color: theme.textSecondary }]}>
                 Try adjusting your date range, search query, or app filters.
               </Text>
+              <TouchableOpacity
+                style={{
+                  marginTop: 18,
+                  backgroundColor: theme.primary,
+                  paddingVertical: 10,
+                  paddingHorizontal: 18,
+                  borderRadius: 12,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8
+                }}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setIsImportModalVisible(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Icon name="download" size={16} color="#FFFFFF" />
+                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>
+                  Import Statement (PDF / CSV)
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
