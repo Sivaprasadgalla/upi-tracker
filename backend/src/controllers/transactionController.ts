@@ -5,6 +5,7 @@ import { Transaction } from '../models/Transaction.js';
 import { User } from '../models/User.js';
 import { Budget } from '../models/Budget.js';
 import { UpiParserService } from '../services/upiParser.js';
+import { StatementParserService } from '../services/statementParser.js';
 import { BudgetAlertService } from '../services/budgetAlertService.js';
 import { AppSource } from '../types/index.js';
 
@@ -338,5 +339,114 @@ export const purgeAllUserData = async (req: AuthRequest, res: Response): Promise
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message || 'Failed to purge data.' });
+  }
+};
+
+export const importStatement = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ success: false, message: 'Authentication required' });
+      return;
+    }
+
+    const { content } = req.body;
+    if (!content || typeof content !== 'string' || content.trim().length === 0) {
+      res.status(400).json({ success: false, message: 'Statement content (CSV text or SMS) is required.' });
+      return;
+    }
+
+    const parsedItems = StatementParserService.parse(content);
+    if (parsedItems.length === 0) {
+      res.status(422).json({
+        success: false,
+        message: 'Could not extract any valid transactions from the statement. Ensure it is a valid PhonePe, Paytm, or Bank CSV/statement.'
+      });
+      return;
+    }
+
+    let insertedCount = 0;
+    let duplicateCount = 0;
+    let totalDebitAmount = 0;
+    let totalCreditAmount = 0;
+    const insertedTransactions: any[] = [];
+
+    for (const item of parsedItems) {
+      // Deduplication check:
+      // 1. By bankRefNumber if available
+      // 2. Or by same amount, type, merchantName, and date within 1 day
+      let isDuplicate = false;
+      if (item.bankRefNumber) {
+        const existingByRef = await Transaction.findOne({
+          userId: new Types.ObjectId(userId),
+          bankRefNumber: item.bankRefNumber
+        });
+        if (existingByRef) isDuplicate = true;
+      }
+
+      if (!isDuplicate) {
+        const startOfDay = new Date(item.transactionDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(item.transactionDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const existingFuzzy = await Transaction.findOne({
+          userId: new Types.ObjectId(userId),
+          amount: item.amount,
+          type: item.type,
+          merchantName: item.merchantName,
+          transactionDate: { $gte: startOfDay, $lte: endOfDay }
+        });
+        if (existingFuzzy) isDuplicate = true;
+      }
+
+      if (isDuplicate) {
+        duplicateCount++;
+        continue;
+      }
+
+      const newTx = await Transaction.create({
+        userId: new Types.ObjectId(userId),
+        amount: item.amount,
+        currency: 'INR',
+        type: item.type,
+        appSource: item.appSource,
+        merchantName: item.merchantName,
+        vpa: item.vpa,
+        bankRefNumber: item.bankRefNumber,
+        bankName: item.bankName,
+        accountLast4: item.accountLast4,
+        category: item.category,
+        rawNotification: item.rawText,
+        transactionDate: item.transactionDate,
+        isVerified: true,
+        isManualEntry: false
+      });
+
+      if (item.type === 'DEBIT') {
+        totalDebitAmount += item.amount;
+        BudgetAlertService.evaluate(userId, item.amount).catch(() => {});
+      } else {
+        totalCreditAmount += item.amount;
+      }
+
+      insertedCount++;
+      insertedTransactions.push(newTx);
+    }
+
+    res.json({
+      success: true,
+      message: `Import completed: ${insertedCount} new transactions added, ${duplicateCount} duplicates skipped.`,
+      stats: {
+        totalParsed: parsedItems.length,
+        inserted: insertedCount,
+        duplicatesSkipped: duplicateCount,
+        totalDebitAmount,
+        totalCreditAmount
+      },
+      data: insertedTransactions
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message || 'Failed to import statement.' });
   }
 };

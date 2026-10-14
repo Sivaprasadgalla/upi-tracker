@@ -5,7 +5,8 @@ import {
   createManual,
   updateTransaction,
   deleteTransaction,
-  purgeAllUserData
+  purgeAllUserData,
+  importStatement
 } from '../controllers/transactionController.js';
 import { authenticate, optionalAuthenticate } from '../middlewares/auth.js';
 
@@ -13,6 +14,9 @@ const router = Router();
 
 // Ingestion endpoint for Android Headless Service & iOS Shortcut Webhook
 router.post('/ingest', optionalAuthenticate, ingestNotification);
+
+// Bulk Statement Import (PhonePe, Paytm, GPay, Bank CSV, Bulk SMS)
+router.post('/import/statement', authenticate, importStatement);
 
 // Purge / Reset endpoint to start fresh
 router.delete('/purge/all', authenticate, purgeAllUserData);

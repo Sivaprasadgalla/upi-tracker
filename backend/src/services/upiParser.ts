@@ -220,6 +220,7 @@ export class UpiParserService {
       const debitPatterns = [
         /(?:;\s*|to\s+)([A-Za-z0-9\s.&'-]{2,35}?)\s+credited/i,
         /(?:paid to|sent to|transfer to|transferred to|towards|to)\s+([A-Za-z0-9\s.&'-]{2,35}?)(?=\s+(?:on|using|via|successfully|ref|upi|from|\*\*|\.|$))/i,
+        /(?:from\s+[^\n]+?\s+to)\s+([A-Za-z0-9\s.&'-]{2,35}?)(?=\s+(?:on|using|via|successfully|ref|upi|\.|$))/i,
         /(?:debited for|for)\s+([A-Za-z0-9\s.&'-]{2,35}?)(?=\s+(?:order|on|using|via|successfully|ref|upi|\.|$))/i,
         /(?:info:\s*upi\/)([A-Za-z0-9\s.&'-]{2,30})/i,
         /(?:to\s+vpa\s+)([A-Za-z0-9@._-]{3,35})/i,
@@ -270,7 +271,7 @@ export class UpiParserService {
    */
   private static extractRefNumber(text: string): string | undefined {
     const refPatterns = [
-      /(?:ref(?:\s+no\.?|erence)?|utr|rrn|txn\s+id|upi)[:\s#]*([0-9]{8,14})/i,
+      /(?:upi\s*(?:ref(?:\s+no\.?)?|txn)?|ref(?:\s+no\.?|erence)?|utr|rrn|txn\s+id)[:\s#]*([0-9]{8,14})/i,
       /(?:upi\/[A-Za-z0-9]+\/)([0-9]{8,14})/i
     ];
 

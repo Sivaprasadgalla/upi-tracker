@@ -20,6 +20,7 @@ import { ManualAddTransactionModal } from '../components/common/ManualAddTransac
 import { TransactionDetailModal } from '../components/common/TransactionDetailModal';
 import { FloatingAddButton } from '../components/common/FloatingAddButton';
 import { AppleCalendarPicker } from '../components/common/AppleCalendarPicker';
+import { ImportStatementModal } from '../components/common/ImportStatementModal';
 import { Icon } from '../components/common/Icon';
 
 export const TransactionsScreen: React.FC = () => {
@@ -41,6 +42,7 @@ export const TransactionsScreen: React.FC = () => {
   const [showRangeCalendar, setShowRangeCalendar] = useState<boolean>(true);
 
   const [isManualModalVisible, setIsManualModalVisible] = useState(false);
+  const [isImportModalVisible, setIsImportModalVisible] = useState(false);
   const [transactionToEdit, setTransactionToEdit] = useState<ITransaction | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<ITransaction | null>(null);
   const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
@@ -209,14 +211,27 @@ export const TransactionsScreen: React.FC = () => {
         {/* Large Title Header */}
         <View style={styles.headerRow}>
           <Text style={[styles.largeTitle, { color: theme.textPrimary }]}>History</Text>
-          <TouchableOpacity
-            style={[styles.addBtn, { backgroundColor: theme.primaryLight }]}
-            onPress={handleOpenAddModal}
-            activeOpacity={0.7}
-          >
-            <Icon name="plus" size={18} color={theme.primary} />
-            <Text style={[styles.addBtnText, { color: theme.primary }]}>Record</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity
+              style={[styles.addBtn, { backgroundColor: theme.primaryLight }]}
+              onPress={() => {
+                Haptics.selectionAsync();
+                setIsImportModalVisible(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <Icon name="download" size={16} color={theme.primary} />
+              <Text style={[styles.addBtnText, { color: theme.primary }]}>Import</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.addBtn, { backgroundColor: theme.primaryLight }]}
+              onPress={handleOpenAddModal}
+              activeOpacity={0.7}
+            >
+              <Icon name="plus" size={18} color={theme.primary} />
+              <Text style={[styles.addBtnText, { color: theme.primary }]}>Record</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Native Search Bar */}
@@ -409,6 +424,12 @@ export const TransactionsScreen: React.FC = () => {
         }}
         onEdit={handleEditFromDetail}
         onDelete={handleDeleteFromDetail}
+      />
+
+      {/* Bulk Statement Import Modal (PhonePe, Paytm, GPay, Bank Statements) */}
+      <ImportStatementModal
+        visible={isImportModalVisible}
+        onClose={() => setIsImportModalVisible(false)}
       />
     </SafeAreaView>
   );

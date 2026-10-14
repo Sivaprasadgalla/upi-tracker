@@ -18,6 +18,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { ThemeMode } from '../theme/colors';
 import { IOSSegmentedControl } from '../components/ios/IOSSegmentedControl';
 import { Icon } from '../components/common/Icon';
+import { ImportStatementModal } from '../components/common/ImportStatementModal';
 import { BiometricService } from '../services/biometricService';
 import { AndroidListenerBridge } from '../services/androidListenerBridge';
 
@@ -36,6 +37,7 @@ export const SetupTrackingScreen: React.FC = () => {
 
   const { theme, themeMode, setThemeMode, isDark } = useTheme();
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isImportModalVisible, setIsImportModalVisible] = useState(false);
 
   const themeOptions: ThemeMode[] = ['system', 'light', 'dark'];
   const themeLabels = ['System', 'Light', 'Dark'];
@@ -396,6 +398,38 @@ export const SetupTrackingScreen: React.FC = () => {
           </>
         )}
 
+        {/* Section: Import Past Statements */}
+        <Text style={[styles.sectionHeader, { color: theme.textSecondary, marginTop: 24 }]}>
+          IMPORT PAST STATEMENT (PHONEPE / PAYTM / BANKS)
+        </Text>
+        <View style={[styles.insetGroupCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder, padding: 16 }]}>
+          <Text style={{ fontSize: 15, fontWeight: '700', color: theme.textPrimary, marginBottom: 4 }}>
+            Sync Past Months &amp; Years
+          </Text>
+          <Text style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 18, marginBottom: 14 }}>
+            Import your full transaction history from PhonePe, Google Pay, Paytm, or Bank statements (CSV / Excel / SMS text).
+          </Text>
+          <TouchableOpacity
+            style={{
+              backgroundColor: theme.primary,
+              height: 44,
+              borderRadius: 10,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8
+            }}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setIsImportModalVisible(true);
+            }}
+            activeOpacity={0.8}
+          >
+            <Icon name="download" size={18} color="#FFFFFF" />
+            <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Open Statement Importer</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Section 7: Account & Friends Multi-User Cloud Sync */}
         <Text style={[styles.sectionHeader, { color: theme.textSecondary, marginTop: 24 }]}>
           ACCOUNT &amp; MULTI-USER CLOUD SYNC
@@ -500,6 +534,11 @@ export const SetupTrackingScreen: React.FC = () => {
         </View>
       </ScrollView>
 
+      {/* Bulk Statement Import Modal (PhonePe, Paytm, GPay, Bank Statements) */}
+      <ImportStatementModal
+        visible={isImportModalVisible}
+        onClose={() => setIsImportModalVisible(false)}
+      />
     </SafeAreaView>
   );
 };

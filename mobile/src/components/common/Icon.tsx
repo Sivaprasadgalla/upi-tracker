@@ -33,6 +33,8 @@ export type IconName =
   | 'edit'
   | 'lock'
   | 'check'
+  | 'download'
+  | 'document'
   | 'refresh';
 
 interface IconProps {
@@ -496,6 +498,23 @@ export const Icon: React.FC<IconProps> = ({
         <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
           <Rect x="3" y="11" width="18" height="11" rx="2" stroke={strokeColor} strokeWidth="2" />
           <Path d="M7 11V7C7 4.2 9.2 2 12 2C14.8 2 17 4.2 17 7V11" stroke={strokeColor} strokeWidth="2" />
+        </Svg>
+      );
+
+    // Download / Import
+    case 'download':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+          <Path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke={strokeColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </Svg>
+      );
+
+    // Document
+    case 'document':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+          <Path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke={strokeColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <Path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke={strokeColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </Svg>
       );
 
